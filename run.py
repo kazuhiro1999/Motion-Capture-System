@@ -14,6 +14,8 @@ from utils import TimeUtil
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default="config.json")
+    parser.add_argument('--host', default="127.0.0.1")
+    parser.add_argument('--port', default=50000)
 
     args = parser.parse_args()
     return args
@@ -32,7 +34,7 @@ def main():
 
     pose_estimators = [MediapipePose() for _ in config['cameras']]
 
-    udp_client = UDPClient(host='127.0.0.1', port=50000)
+    udp_client = UDPClient(host=args.host, port=args.port)
     udp_client.open()
 
     keypoints2d_list = []

@@ -9,7 +9,7 @@ import subprocess
 import numpy as np
 
 PYTHON_PATH = r"C:/Users/esaki/anaconda3/python.exe"
-SCRIPT_PATH = r"C:/Users/esaki/Documents/Motion Capture System/run.py"
+SCRIPT_PATH = r"C:/Users/esaki/Documents/MotionCaptureSystem/run.py"
 
 global process
 process = None
@@ -43,15 +43,19 @@ def settings():
 @app.route("/start", methods=["POST"])
 def start():
     global process
+    if process is not None:
+        return 'Capture has already started'
     if 'application/json' not in request.headers['Content-Type']:
         return jsonify(res='error'), 400
     try:
         data = request.json
         config_path = data['config_path']
-        process = process_start(SCRIPT_PATH, config_path)
-        return f"Capture Started at Port:{data['udp_port']}"
-    except:
-        return "Failed to start"   
+        udp_port = data['udp_port']
+        process = process_start(SCRIPT_PATH, config_path, udp_port)
+        return f"Capture started at Port:{udp_port}"
+    except Exception as e:
+        return f"Failed to start : {e}"
+
 
 @app.route("/end", methods=["GET"])
 def end():
@@ -112,9 +116,9 @@ def save_config(data):
     return config_path
 
 
-def process_start(script_path, config_path):
-    command = [PYTHON_PATH, script_path, "--config", config_path]
-    proc = subprocess.Popen(command)
+def process_start(script_path, config_path, udp_port):
+    command = [PYTHON_PATH, script_path, "--config", config_path, "--port", udp_port]
+    proc = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return proc
 
 

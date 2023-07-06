@@ -50,7 +50,7 @@ class MediapipePose(PoseEstimator):
 
     def __init__(self):
         self.pose = mp.solutions.pose.Pose(
-            model_complexity=1,
+            model_complexity=2,
             enable_segmentation=False,
             min_detection_confidence=0.2,
             min_tracking_confidence=0.5,
@@ -73,3 +73,4 @@ class MediapipePose(PoseEstimator):
             y = landmark.y * image_height
             keypoints2d.append([x, y, landmark.visibility])
         return np.array(keypoints2d)
+

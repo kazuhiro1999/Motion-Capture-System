@@ -2,19 +2,17 @@
 カメラパラメータの設定用サーバ
 '''
 
-import cv2
 from flask import *
 import subprocess
 
 import numpy as np
 
-PYTHON_PATH = r"/path/to/python.exe"
-SCRIPT_PATH = r"/path/to/project/run.py"
+from controller import MotionCaptureController
 
-global process
-process = None
+controller = MotionCaptureController()
 
 app = Flask(__name__)
+
 
 @app.route("/", methods=["GET"])
 def root():
@@ -24,7 +22,7 @@ def root():
 # 接続テスト
 @app.route("/test", methods=["GET"])
 def test():
-    return "Connection Established"
+    return "Connection Established", 200
 
 
 # カメラ設定
@@ -35,37 +33,34 @@ def settings():
     try:
         data = request.json
         config_path = save_config(data)
-        return f"config saved to {config_path}"
+        return f"Config saved to {config_path}", 200
     except:
-        return "Configuration Failed"
+        return "Configuration failed", 202
     
 
 @app.route("/start", methods=["POST"])
 def start():
-    global process
-    if process is not None:
-        return 'Capture has already started'
     if 'application/json' not in request.headers['Content-Type']:
         return jsonify(res='error'), 400
+    if controller.is_playing:
+        return f"Capture has already started", 202
     try:
         data = request.json
         config_path = data['config_path']
         udp_port = data['udp_port']
-        process = process_start(SCRIPT_PATH, config_path, udp_port)
-        return f"Capture started at Port:{udp_port}"
+        controller.initialize(config_path=config_path, udp_host='127.0.0.1', udp_port=udp_port)
+        controller.start_capture()
+        return f"Capture started at Port:{udp_port}", 200
     except Exception as e:
-        return f"Failed to start : {e}"
-
+        return f"Failed to start : {e}", 400
+    
 
 @app.route("/end", methods=["GET"])
 def end():
-    global process
-    try:
-        process.terminate()
-        process = None
-        return "Process Ended"
-    except:
-        return "Process has not been started"  
+    if not controller.is_playing:
+        return "Capture has not started yet", 202
+    controller.end_capture()
+    return "Capture ended", 200
     
 
 def save_config(data):
@@ -115,12 +110,6 @@ def save_config(data):
 
     print(f"config saved at {config_path}")
     return config_path
-
-
-def process_start(script_path, config_path, udp_port):
-    command = [PYTHON_PATH, script_path, "--config", config_path, "--port", str(udp_port)]
-    proc = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return proc
 
 
 def quaternion_to_matrix(quaternion):

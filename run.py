@@ -9,6 +9,7 @@ from pose3d import recover_pose_3d
 from pose2d import MediapipePose
 from network import UDPClient
 from utils import TimeUtil
+from visalization import draw_keypoints3d
 
 
 def get_args():
@@ -74,6 +75,7 @@ def main():
                     }
                     data['Bones'].append(bone)                
                 ret = udp_client.send(data)
+            #draw_keypoints3d(keypoints3d, pose_estimator.KINEMATIC_TREE)  # for visualization
 
 
             # get 2d pose estimation results

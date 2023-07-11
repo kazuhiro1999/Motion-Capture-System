@@ -8,8 +8,8 @@ import subprocess
 
 import numpy as np
 
-PYTHON_PATH = r"C:/Users/esaki/anaconda3/python.exe"
-SCRIPT_PATH = r"C:/Users/esaki/Documents/MotionCaptureSystem/run.py"
+PYTHON_PATH = r"/path/to/python.exe"
+SCRIPT_PATH = r"/path/to/project/run.py"
 
 global process
 process = None
@@ -62,6 +62,7 @@ def end():
     global process
     try:
         process.terminate()
+        process = None
         return "Process Ended"
     except:
         return "Process has not been started"  
@@ -117,7 +118,7 @@ def save_config(data):
 
 
 def process_start(script_path, config_path, udp_port):
-    command = [PYTHON_PATH, script_path, "--config", config_path, "--port", udp_port]
+    command = [PYTHON_PATH, script_path, "--config", config_path, "--port", str(udp_port)]
     proc = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return proc
 

@@ -47,6 +47,16 @@ class MediapipePose(PoseEstimator):
         'left_toe': 31,
         'right_toe': 32
     }
+    
+    KINEMATIC_TREE = [
+        [KEYPOINT_DICT['left_hip'], KEYPOINT_DICT['left_shoulder'], KEYPOINT_DICT['right_shoulder'], KEYPOINT_DICT['right_hip'], KEYPOINT_DICT['left_hip']],
+        [KEYPOINT_DICT['left_ear'], KEYPOINT_DICT['left_eye'], KEYPOINT_DICT['nose'], KEYPOINT_DICT['right_eye'], KEYPOINT_DICT['right_ear']],
+        [KEYPOINT_DICT['right_mouth'], KEYPOINT_DICT['right_mouth']],
+        [KEYPOINT_DICT['left_shoulder'], KEYPOINT_DICT['left_elbow'], KEYPOINT_DICT['left_wrist'], KEYPOINT_DICT['left_hand_tip']],
+        [KEYPOINT_DICT['right_shoulder'], KEYPOINT_DICT['right_elbow'], KEYPOINT_DICT['right_wrist'], KEYPOINT_DICT['right_hand_tip']],
+        [KEYPOINT_DICT['left_hip'], KEYPOINT_DICT['left_knee'], KEYPOINT_DICT['left_ankle'], KEYPOINT_DICT['left_heel'], KEYPOINT_DICT['left_toe']],
+        [KEYPOINT_DICT['right_hip'], KEYPOINT_DICT['right_knee'], KEYPOINT_DICT['right_ankle'], KEYPOINT_DICT['right_heel'], KEYPOINT_DICT['right_toe']],
+    ]
 
     def __init__(self):
         self.pose = mp.solutions.pose.Pose(

@@ -1,3 +1,4 @@
+import os
 import cv2
 import numpy as np
 import json
@@ -27,23 +28,24 @@ class MotionCaptureController:
 
     def start_capture(self):
         if self.is_playing:
-            print('Capture has already started')
-            return
+            return 'Capture has already started'
+        
         if self.config is None or self.port is None:
-            print('Capture is not initialized yet. Please call initialize() before start.')
-            return
+            return 'Capture is not initialized yet. Please call initialize() before start.'
+
         self.is_playing = True
         self.capture_thread = threading.Thread(target=self.capture_process)
         self.capture_thread.start()
-        print(f"Capture started")
+        print("capture thread started")
+        return "Capture started"
 
     def end_capture(self):
         if not self.is_playing:
-            print("Capture has not been started")
-            return
+            return "Capture has not been started"
+        
         self.is_playing = False
         self.capture_thread.join()
-        print("Capture ended")
+        return "Capture ended"
 
     def load_config(self, config_path):
         try:
@@ -69,13 +71,13 @@ class MotionCaptureController:
         proj_matrices = []
 
         t = TimeUtil.get_unixtime()
-
+        print("capture start")
         # Main loop
         with ThreadPoolExecutor(max_workers=4) as executor:
 
             while self.is_playing:
                 timestamp = t
-
+                print(timestamp)
                 # send 2d pose estimation
                 t = TimeUtil.get_unixtime()
                 futures = []

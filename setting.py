@@ -2,11 +2,9 @@
 カメラパラメータの設定用サーバ
 '''
 
-from flask import *
-import subprocess
-
+import os
 import numpy as np
-
+from flask import *
 from controller import MotionCaptureController
 
 controller = MotionCaptureController()
@@ -22,6 +20,7 @@ def root():
 # 接続テスト
 @app.route("/test", methods=["GET"])
 def test():
+    print("Test from python")
     return "Connection Established", 200
 
 
@@ -46,11 +45,12 @@ def start():
         return f"Capture has already started", 202
     try:
         data = request.json
-        config_path = data['config_path']
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(script_dir, data['config_path'])
         udp_port = data['udp_port']
         controller.initialize(config_path=config_path, udp_host='127.0.0.1', udp_port=udp_port)
-        controller.start_capture()
-        return f"Capture started at Port:{udp_port}", 200
+        res = controller.start_capture()
+        return res, 200
     except Exception as e:
         return f"Failed to start : {e}", 400
     
@@ -59,11 +59,12 @@ def start():
 def end():
     if not controller.is_playing:
         return "Capture has not started yet", 202
-    controller.end_capture()
-    return "Capture ended", 200
+    res = controller.end_capture()
+    return res, 200
     
 
 def save_config(data):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = data['config_path']
     config = {'cameras': []}
 
@@ -93,7 +94,7 @@ def save_config(data):
         extrinsic = np.concatenate([Rc, tc], axis=1)
 
         try:
-            setting_path = camera['setting_path']
+            setting_path = os.path.join(script_dir, camera['setting_path'])
             with open(setting_path, 'r') as f:
                 camera_setting = json.load(f)
         except:
@@ -104,8 +105,8 @@ def save_config(data):
         with open(setting_path, 'w') as f:
             json.dump(camera_setting, f, indent=4)
 
-
-    with open(config_path, 'w') as fp:
+    save_path = os.path.join(script_dir, config_path)
+    with open(save_path, 'w') as fp:
         json.dump(config, fp, indent=4)
 
     print(f"config saved at {config_path}")

@@ -1,4 +1,5 @@
 import argparse
+import os
 from controller import MotionCaptureController
 
 
@@ -14,9 +15,11 @@ def get_args():
 
 def main():
     args = get_args()
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, args.config)
 
     controller = MotionCaptureController()
-    controller.initialize(config_path=args.config, udp_host=args.host, udp_port=args.port)
+    controller.initialize(config_path=config_path, udp_host=args.host, udp_port=args.port)
 
     controller.start_capture()
 

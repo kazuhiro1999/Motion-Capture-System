@@ -19,6 +19,7 @@ class MotionCaptureController:
         self.is_playing = False
         self.host = '127.0.0.1'
         self.port = 50000
+        self.debug = False
 
     def initialize(self, config_path, udp_host, udp_port):
         self.config = self.load_config(config_path)
@@ -26,7 +27,7 @@ class MotionCaptureController:
         self.port = udp_port
         print(f"Capture initialized with config: {config_path} and UDP Port: {udp_port}")
 
-    def start_capture(self):
+    def start_capture(self, mode='default'):
         if self.is_playing:
             return 'Capture has already started'
         
@@ -34,10 +35,16 @@ class MotionCaptureController:
             return 'Capture is not initialized yet. Please call initialize() before start.'
 
         self.is_playing = True
-        self.capture_thread = threading.Thread(target=self.capture_process)
-        self.capture_thread.start()
-        print("capture thread started")
-        return "Capture started"
+        if mode == 'default':
+            print("capture started on main thread. Press ESC to end capture.")
+            self.capture_process()
+        elif mode == 'multi-thread':
+            self.capture_thread = threading.Thread(target=self.capture_process)
+            self.capture_thread.start()
+            print("capture thread started")
+        else:
+            raise Exception(f"unknown capture mode : {mode}")
+        return "Success to start capture"
 
     def end_capture(self):
         if not self.is_playing:
@@ -77,7 +84,6 @@ class MotionCaptureController:
 
             while self.is_playing:
                 timestamp = t
-                print(timestamp)
                 # send 2d pose estimation
                 t = TimeUtil.get_unixtime()
                 futures = []
@@ -106,7 +112,8 @@ class MotionCaptureController:
                         }
                         data['Bones'].append(bone)                
                     ret = udp_client.send(data)
-                #draw_keypoints3d(keypoints3d, pose_estimator.KINEMATIC_TREE)  # for visualization
+                if self.debug:
+                    draw_keypoints3d(keypoints3d, pose_estimator.KINEMATIC_TREE)  # for visualization
 
 
                 # get 2d pose estimation results

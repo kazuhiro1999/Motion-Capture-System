@@ -20,7 +20,7 @@ def main():
 
     controller = MotionCaptureController()
     controller.initialize(config_path=config_path, udp_host=args.host, udp_port=args.port)
-
+    controller.debug = True
     controller.start_capture()
 
     while True:

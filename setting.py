@@ -29,12 +29,9 @@ def test():
 def settings():
     if 'application/json' not in request.headers['Content-Type']:
         return jsonify(res='error'), 400
-    try:
-        data = request.json
-        config_path = save_config(data)
-        return f"Config saved to {config_path}", 200
-    except:
-        return "Configuration failed", 202
+    data = request.json
+    config_path = save_config(data)
+    return f"Config saved to {config_path}", 200
     
 
 @app.route("/start", methods=["POST"])
@@ -49,7 +46,7 @@ def start():
         config_path = os.path.join(script_dir, data['config_path'])
         udp_port = data['udp_port']
         controller.initialize(config_path=config_path, udp_host='127.0.0.1', udp_port=udp_port)
-        res = controller.start_capture()
+        res = controller.start_capture(mode='multi-thread')
         return res, 200
     except Exception as e:
         return f"Failed to start : {e}", 400
@@ -69,9 +66,14 @@ def save_config(data):
     config = {'cameras': []}
 
     for camera in data['cameras']:
+        # 設定ファイル名
+        if (camera['setting_path'] == ""):
+            camera['setting_path'] = f"setting_{camera['name']}.json".replace(" ", "_")
+        setting_path = os.path.join(script_dir, camera['setting_path'])
+
         camera_config = {
             'name': camera['name'],
-            'setting_path': camera['setting_path']
+            'setting_path': setting_path
         }
         if camera['type'] == 'USBCamera':
             camera_config['device'] = camera['device_id']
@@ -93,15 +95,13 @@ def save_config(data):
         tc = -R.T @ t
         extrinsic = np.concatenate([Rc, tc], axis=1)
 
-        try:
-            setting_path = os.path.join(script_dir, camera['setting_path'])
+        if os.path.exists(setting_path):
             with open(setting_path, 'r') as f:
                 camera_setting = json.load(f)
-        except:
+        else:
             camera_setting = {}
 
-        camera_setting['extrinsic_matrix'] = extrinsic.tolist()
-        
+        camera_setting['extrinsic_matrix'] = extrinsic.tolist()        
         with open(setting_path, 'w') as f:
             json.dump(camera_setting, f, indent=4)
 

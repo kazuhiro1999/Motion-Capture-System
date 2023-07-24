@@ -1,15 +1,16 @@
-import os
 import cv2
-import numpy as np
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import Process, Event
 
-from camera import USBCamera
-from pose3d import recover_pose_3d
-from pose2d import MediapipePose
-from network import UDPClient
 from utils import TimeUtil
+from camera import USBCamera
+from pose2d import MediapipePose
+from pose3d import recover_pose_3d
+from network import UDPClient
+from data import to_dict
+from multiprocess import process_start
 from visalization import draw_keypoints3d
 
 
@@ -35,13 +36,19 @@ class MotionCaptureController:
             return 'Capture is not initialized yet. Please call initialize() before start.'
 
         self.is_playing = True
+        self.mode = mode
         if mode == 'default':
-            print("capture started on main thread. Press ESC to end capture.")
+            print("capture started at main thread. Press ESC to end capture.")
             self.capture_process()
         elif mode == 'multi-thread':
             self.capture_thread = threading.Thread(target=self.capture_process)
             self.capture_thread.start()
             print("capture thread started")
+        elif mode == 'multi-process':
+            self.cancel_event = Event()
+            self.proc = Process(target=process_start, args=(self.config, self.host, self.port, self.cancel_event))
+            self.proc.start()            
+            print("capture process started")
         else:
             raise Exception(f"unknown capture mode : {mode}")
         return "Success to start capture"
@@ -51,7 +58,14 @@ class MotionCaptureController:
             return "Capture has not been started"
         
         self.is_playing = False
-        self.capture_thread.join()
+        if self.mode == 'multi-thread':
+            self.capture_thread.join()
+        elif self.mode == 'multi-process':
+            self.cancel_event.set()
+            self.proc.join()
+            self.proc.terminate()
+        else:
+            pass
         return "Capture ended"
 
     def load_config(self, config_path):
@@ -98,20 +112,9 @@ class MotionCaptureController:
                 future_keypoints3d = executor.submit(recover_pose_3d, proj_matrices, keypoints2d_list)
 
                 keypoints3d = future_keypoints3d.result()
-                if keypoints3d is not None:
-                    data = {"Type":MediapipePose.Type, "TimeStamp": timestamp, "Bones":[]}
-                    keys = MediapipePose.KEYPOINT_DICT
-                    for key in keys:
-                        bone = {
-                            "Name": key,
-                            "Position":{
-                                "x": float(keypoints3d[keys[key],0]),
-                                "y": float(keypoints3d[keys[key],1]),
-                                "z": float(keypoints3d[keys[key],2]),
-                            }
-                        }
-                        data['Bones'].append(bone)                
-                    ret = udp_client.send(data)
+                data = to_dict(timestamp, keypoints3d, MediapipePose.KEYPOINT_DICT, MediapipePose.Type)                
+                ret = udp_client.send(data)
+
                 if self.debug:
                     draw_keypoints3d(keypoints3d, pose_estimator.KINEMATIC_TREE)  # for visualization
 
@@ -123,7 +126,7 @@ class MotionCaptureController:
                 for camera, pose_estimator, future in zip(cameras, pose_estimators, futures):
                     keypoints2d = future.result()
                     if keypoints2d is not None:
-                        proj_matrix = camera.camera_setting.get_projection_matrix()
+                        proj_matrix = camera.camera_setting.proj_matrix
                         proj_matrices.append(proj_matrix)
                         keypoints2d_list.append(keypoints2d)
 

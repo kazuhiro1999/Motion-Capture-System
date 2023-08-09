@@ -46,7 +46,7 @@ def start():
         config_path = os.path.join(script_dir, data['config_path'])
         udp_port = data['udp_port']
         controller.initialize(config_path=config_path, udp_host='127.0.0.1', udp_port=udp_port)
-        res = controller.start_capture(mode='multi-thread')
+        res = controller.start_capture(mode='multi-process')
         return res, 200
     except Exception as e:
         return f"Failed to start : {e}", 400

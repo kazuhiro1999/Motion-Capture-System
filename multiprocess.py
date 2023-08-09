@@ -33,6 +33,8 @@ def camera_process(camera_config, event, queue, cancel_event):
                 proj_matrix = camera.camera_setting.proj_matrix
                 # Put the result into the queue
                 queue.put((proj_matrix, keypoints2d))
+            else:
+                queue.put((None, None))
 
         cv2.waitKey(1)
 
@@ -61,7 +63,6 @@ def process_start(config, host, port, cancel_event):
 
     print("capture start")
 
-    is_playing = True
     # Send signal to start processing
     for event in events:
         event.set()
@@ -70,15 +71,15 @@ def process_start(config, host, port, cancel_event):
 
     # Main loop
     while not cancel_event.is_set():
-
         # Collect results from each process
         keypoints2d_list = []
         proj_matrices = []
 
         for queue in queues:
             proj_matrix, keypoints2d = queue.get()
-            proj_matrices.append(proj_matrix)
-            keypoints2d_list.append(keypoints2d)
+            if keypoints2d is not None:
+                proj_matrices.append(proj_matrix)
+                keypoints2d_list.append(keypoints2d)
 
         # Send signal to start next processing
         for event in events:
@@ -102,11 +103,12 @@ def process_start(config, host, port, cancel_event):
 
 
     cv2.destroyAllWindows()
+    print("capture ended")
 
 
 if __name__ == "__main__":
 
-    with open("config.json", 'r') as f:
+    with open("config1.json", 'r') as f:
         config = json.load(f)
 
     cancel_event = Event()

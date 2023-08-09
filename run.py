@@ -5,7 +5,7 @@ from controller import MotionCaptureController
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default="config.json")
+    parser.add_argument('--config', default="config1.json")
     parser.add_argument('--host', default="127.0.0.1")
     parser.add_argument('--port', default=50000)
 
@@ -24,7 +24,7 @@ def main():
     #controller.debug = True
     controller.start_capture(mode='multi-process')
     
-    #input()
+    input()
     controller.end_capture()
 
 

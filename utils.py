@@ -8,9 +8,56 @@ class TimeUtil:
         return int(time.time()*1000)
 
 
+import time
+
+class FPSCalculator:
+    DICT = {}
+
+    @staticmethod
+    def start(name):
+        FPSCalculator.DICT.setdefault(name, {'start':[], 'end':[], 'time':[]})
+        if len(FPSCalculator.DICT[name]['start']) == len(FPSCalculator.DICT[name]['end']):
+            t = time.time()
+            FPSCalculator.DICT[name]['start'].append(t)
+        else:
+            print(f"{name} has already started")
+
+    @staticmethod
+    def end(name):        
+        if name not in FPSCalculator.DICT.keys():
+            return 
+        if len(FPSCalculator.DICT[name]['end']) == len(FPSCalculator.DICT[name]['start']) - 1:
+            t = time.time()
+            FPSCalculator.DICT[name]['end'].append(t)
+            elapsed_time = t - FPSCalculator.DICT[name]['start'][-1]
+            FPSCalculator.DICT[name]['time'].append(elapsed_time)
+        else:
+            print(f"{name} has not started")
+
+    @staticmethod
+    def get_execution_time(name, duration=1):
+        if name not in FPSCalculator.DICT.keys():
+            return 0
+        count = len(FPSCalculator.DICT[name]['time'])
+        if count == 0:
+            return 0
+        elif count >= duration:
+            return sum(FPSCalculator.DICT[name]['time'][-duration:]) / duration
+        else:
+            return sum(FPSCalculator.DICT[name]['time']) / count
+
+    @ staticmethod
+    def calc_fps(func):
+        def wrapper(*args, **kwargs):
+            FPSCalculator.start(func.__name__)
+            res = func(*args, **kwargs)
+            FPSCalculator.end(func.__name__)
+            return res
+        return wrapper
+
+
 import subprocess
 import re
-
 
 def get_camera_devices():
 

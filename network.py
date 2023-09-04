@@ -70,3 +70,11 @@ class UDPServer:
 
 
 
+if __name__ == '__main__':
+    server = UDPServer(host='0.0.0.0')
+    server.open()
+
+    data = server.listen()
+    print(data)
+
+    server.close()

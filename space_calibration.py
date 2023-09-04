@@ -9,12 +9,13 @@ KEYPOINT_DICT = MediapipePose.KEYPOINT_DICT
 
 class SpaceCalibrator:
 
-    def __init__(self, num_samples=300, min_confidence=0.5):
+    def __init__(self, num_samples=300, min_confidence=0.5, reference_height=1.6):
         self.camera_settings = []
         self.n_cameras = 0
         self.samples = []
         self.num_samples = num_samples
         self.min_confidence = min_confidence
+        self.reference_height = reference_height
         self.isActive = False
 
     def start_calibration(self, camera_settings):
@@ -38,9 +39,8 @@ class SpaceCalibrator:
         keypoints2d_list = np.array(self.samples)
         n_frames, n_views, n_joints, _ = keypoints2d_list.shape
         
-        params, keypoints3d = calibrate_cameras(self.camera_settings, keypoints2d_list, base_i, pair_i) 
+        params, keypoints3d = calibrate_cameras(self.camera_settings, keypoints2d_list, base_i, pair_i, self.reference_height) 
         self.isActive = False       
-        print("calibration ended")
         return params, keypoints3d
     
 
@@ -50,7 +50,7 @@ def estimate_initial_extrinsic(pts1, pts2, K):
     pts, R, t, mask = cv2.recoverPose(E, pts2, pts1, K)
     return R, t
 
-def calibrate_cameras(camera_settings, keypoints2d_list, base_i=0, pair_i=1):
+def calibrate_cameras(camera_settings, keypoints2d_list, base_i=0, pair_i=1, reference_height=1.6):
     n_frames, n_views, n_joints, _ = keypoints2d_list.shape
 
     sample_points = []
@@ -94,9 +94,9 @@ def calibrate_cameras(camera_settings, keypoints2d_list, base_i=0, pair_i=1):
     keypoints3d_list = keypoints3d[5:30]
 
     o_pos = determine_center_position(keypoints3d_list)
-    o_mat = determine_forward_rotation(keypoints3d_list)
+    o_mat = determine_forward_rotation(keypoints3d)
     o_rot = Rotation.from_matrix(o_mat)
-    scale = determine_scale(keypoints3d_list, Height=1.6)
+    scale = determine_scale(keypoints3d_list, Height=reference_height)
 
     for i, camera_setting in enumerate(camera_settings):
         t = o_rot.apply(camera_params[i]['t'].flatten() - o_pos).reshape([3,1]) * scale
@@ -132,6 +132,9 @@ def determine_center_position(keypoints3d_list):
 
 def determine_forward_rotation(keypoints3d_list):
     # keypoints3d_list : (n_frames, n_joints, 3)   
+    
+    # 初めの数フレームの体の向きを使用する方法
+    keypoints3d_list = keypoints3d_list[5:25]
     l_shoulder = keypoints3d_list[:, KEYPOINT_DICT['left_shoulder']]
     r_shoulder = keypoints3d_list[:, KEYPOINT_DICT['right_shoulder']]
     l_hips = keypoints3d_list[:, KEYPOINT_DICT['left_hip']]
@@ -141,28 +144,18 @@ def determine_forward_rotation(keypoints3d_list):
     forward = forward_vector / np.linalg.norm(forward_vector)
     rotation_matrix = (forward.reshape([3,1]) @ np.array([0,0,1]).reshape([1,3])).astype(np.float32)
     '''
-    neck = (l_shoulder + r_shoulder) / 2
-    root = (l_ankle + r_ankle) / 2
-    l_ankle = keypoints3d_list[:, KEYPOINT_DICT['left_ankle']]
-    r_ankle = keypoints3d_list[:, KEYPOINT_DICT['right_ankle']]
-    up_vector = (neck - root).mean(axis=0)
-    up = up_vector / np.linalg.norm(up_vector)
-    #rotation_matrix = (up_vector.reshape([3,1]) @ np.array([0,1,0]).reshape([1,3])).astype(np.float32)
-
-    # 右ベクトルを計算
-    right_vector = np.cross(up, forward)
-    right = right_vector / np.linalg.norm(right_vector)
-    
-    # 正確な上方向ベクトルを再計算
-    up = np.cross(forward, right)
-    
-    # 回転行列を作成
-    rotation_matrix = np.array([
-        [right[0], right[1], right[2]],
-        [up[0], up[1], up[2]],
-        [-forward[0], -forward[1], -forward[2]]
-    ])
-    '''    
+    # 移動方向を使用する方法
+    # 最初と最後の10フレームでそれぞれ平均姿勢を計算 -> (n_joints,3)
+    keypoints3d_1 = keypoints3d_list[5:15].mean(axis=0)
+    keypoints3d_2 = keypoints3d_list[-10:].mean(axis=0)
+    # 移動方向の計算に使用するキーポイント
+    indices = [KEYPOINT_DICT[name] for name in ['nose','left_shoulder','right_shoulder','left_hip','right_hip']]
+    # 移動方向を推定
+    forward_vectors = keypoints3d_2[indices] - keypoints3d_1[indices]    
+    forward_vector = forward_vectors.mean(axis=0)
+    # 正規化
+    forward = forward_vector / np.linalg.norm(forward_vector)
+    rotation_matrix = (forward.reshape([3,1]) @ np.array([0,0,1]).reshape([1,3])).astype(np.float32)'''
     return rotation_matrix
 
 def determine_scale(keypoints3d_list, Height=1.0):
@@ -180,15 +173,12 @@ def get_projection_matrix(K, R, t):
     return K.dot(np.concatenate([Rc,tc], axis=-1))
 
 
-if __name__ == '__main__':
+def calibration_process(config_path, height=1.6):
     from concurrent.futures import ThreadPoolExecutor
     from camera import USBCamera
-    from utils import TimeUtil
     from visalization import draw_keypoints
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
     
-    with open('./config_2.json', 'r') as f:
+    with open(config_path, 'r') as f:
         config = json.load(f)
 
     # Initialize Motion Capture
@@ -196,21 +186,18 @@ if __name__ == '__main__':
     for camera in cameras:
         camera.open()
 
-    pose_estimators = [MediapipePose() for _ in config['cameras']]
+    pose_estimators = [MediapipePose(model_complexity=2) for _ in config['cameras']]
 
     keypoints2d_list = []
     
     calibrator = SpaceCalibrator()
     calibrator.start_calibration([camera.camera_setting for camera in cameras])
 
-    t = TimeUtil.get_unixtime()
-    print("capture start")
+    print("sampling...")
     # Main loop
     with ThreadPoolExecutor(max_workers=4) as executor:
         while True:
-            timestamp = t
             # send 2d pose estimation
-            t = TimeUtil.get_unixtime()
             frames = []
             futures = []
             for camera, pose_estimator in zip(cameras, pose_estimators):
@@ -230,17 +217,20 @@ if __name__ == '__main__':
                 if keypoints2d is not None:
                     keypoints2d_list.append(keypoints2d)
 
+            # add sample
             if calibrator.isActive:
                 calibrator.add_samples(keypoints2d_list)
                 print(len(calibrator.samples))
                 if calibrator.is_sampled():
                     params, keypoints3d_list = calibrator.calibrate()
-
+                    print("calibration ended")
+                    break
 
             if cv2.waitKey(1) == 27:  # Press ESC to exit
+                print("calibration stopped")
                 break
 
-    # End Motion Caapture
+    # End 
     for camera in cameras:
         camera.close()
 
@@ -253,6 +243,16 @@ if __name__ == '__main__':
     }
     with open('./data/result.json', 'w') as f:
         json.dump(result, f, indent=4)
+
+    return [camera.camera_setting for camera in cameras], keypoints3d_list 
+
+
+if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d import Axes3D
+
+    # calibration
+    camera_settings, keypoints3d_list = calibration_process(config_path="config1.json")
 
     # visualize calibration result    
     fig = plt.figure()
@@ -269,9 +269,9 @@ if __name__ == '__main__':
                 x2,y2,z2 = keypoints3d[chain[j+1]]
                 ax.plot([x1,x2],[z1,z2],[y1,y2], color='black')     
         ax.scatter([0] [0], [0], s=30, color='black', marker='x')
-        for camera in cameras:
-            Rc = camera.camera_setting.extrinsic_matrix[:,:3]
-            tc = camera.camera_setting.extrinsic_matrix[:,3:]
+        for camera_setting in camera_settings:
+            Rc = camera_setting.extrinsic_matrix[:,:3]
+            tc = camera_setting.extrinsic_matrix[:,3:]
             R = Rc.T
             t = -Rc.T@tc
             ax.scatter(t[0,0], t[2,0], t[1,0], s=30, color='blue')

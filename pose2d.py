@@ -58,9 +58,9 @@ class MediapipePose(PoseEstimator):
         [KEYPOINT_DICT['right_hip'], KEYPOINT_DICT['right_knee'], KEYPOINT_DICT['right_ankle'], KEYPOINT_DICT['right_heel'], KEYPOINT_DICT['right_toe']],
     ]
 
-    def __init__(self):
+    def __init__(self, model_complexity=1):
         self.pose = mp.solutions.pose.Pose(
-            model_complexity=2,
+            model_complexity=model_complexity,
             enable_segmentation=False,
             min_detection_confidence=0.2,
             min_tracking_confidence=0.5,

@@ -3,9 +3,11 @@
 '''
 
 import os
+import threading
 import numpy as np
 from flask import *
 from controller import MotionCaptureController
+from space_calibration import calibration_process
 
 controller = MotionCaptureController()
 
@@ -33,6 +35,24 @@ def settings():
     config_path = save_config(data)
     return f"Config saved to {config_path}", 200
     
+
+# 自動キャリブレーション
+@app.route("/calibration", methods=["POST"])
+def start():
+    if 'application/json' not in request.headers['Content-Type']:
+        return jsonify(res='error'), 400
+    try:
+        data = request.json
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(script_dir, data['config_path'])
+        height = data['height']
+        # キャリブレーションを別スレッドで実行
+        calibration_thread = threading.Thread(target=calibration_process, args=(config_path, height))
+        calibration_thread.start()
+        return "Success to start calibration", 200
+    except Exception as e:
+        return f"Failed to start calibration: {e}", 400
+
 
 @app.route("/start", methods=["POST"])
 def start():

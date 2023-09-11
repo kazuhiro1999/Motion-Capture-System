@@ -1,6 +1,7 @@
 import cv2
 import json
 from multiprocessing import Process, Queue, Event
+from queue import Empty
 
 from utils import TimeUtil
 from camera import USBCamera
@@ -71,12 +72,16 @@ def process_start(config, host, port, cancel_event):
 
     # Main loop
     while not cancel_event.is_set():
+
         # Collect results from each process
         keypoints2d_list = []
         proj_matrices = []
 
         for queue in queues:
-            proj_matrix, keypoints2d = queue.get()
+            try:
+                proj_matrix, keypoints2d = queue.get(timeout=1.0)                
+            except Empty:
+                continue
             if keypoints2d is not None:
                 proj_matrices.append(proj_matrix)
                 keypoints2d_list.append(keypoints2d)

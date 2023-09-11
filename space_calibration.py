@@ -1,8 +1,10 @@
 import json
 import cv2
 import numpy as np
+from calibration.extrinsic import calibrate_cameras, get_projection_matrix
+from calibration.room import *
 from pose2d import MediapipePose
-from scipy.spatial.transform import Rotation
+from visalization import draw_camera
 
 KEYPOINT_DICT = MediapipePose.KEYPOINT_DICT
 
@@ -39,141 +41,44 @@ class SpaceCalibrator:
         keypoints2d_list = np.array(self.samples)
         n_frames, n_views, n_joints, _ = keypoints2d_list.shape
         
-        params, keypoints3d = calibrate_cameras(self.camera_settings, keypoints2d_list, base_i, pair_i, self.reference_height) 
+        camera_params, keypoints3d = calibrate_cameras(self.camera_settings, keypoints2d_list, base_i, pair_i) 
+        keypoints3d_list = keypoints3d[5:30]
+
+        # ルームキャリブレーション用の初期パラメータ
+        s0 = determine_scale(keypoints3d_list, Height=self.reference_height)
+        p0 = determine_center_position(keypoints3d_list)
+        forward = determine_forward_vector(keypoints3d_list)
+        up = determine_upward_vector(keypoints3d_list)
+        R0 = rotation_matrix_from_vectors(forward, up)
+        t0 = -R0 @ (p0 * s0) 
+
+        for i, camera_setting in enumerate(self.camera_settings):
+            R = R0 @ camera_params[i]['R']
+            t = R0 @ (s0 * camera_params[i]['t']) + t0.reshape([3,1])         
+            Rc = R.T
+            tc = -R.T@t
+            camera_setting.extrinsic_matrix = np.concatenate([Rc,tc], axis=-1)
+            camera_params[i] = {
+                't': t.tolist(),
+                'R': R.tolist(),
+                'proj_matrix': get_projection_matrix(camera_setting.intrinsic_matrix, R, t).tolist()
+            }
+
+        # グローバル座標で3次元復元
+        points3d = cv2.triangulatePoints(
+            camera_settings[base_i].get_projection_matrix(),
+            camera_settings[pair_i].get_projection_matrix(),
+            keypoints2d_list[:,base_i,:,:2].reshape([-1,2]).T,
+            keypoints2d_list[:,pair_i,:,:2].reshape([-1,2]).T
+        )
+        points3d = (points3d[:3,:] / points3d[3,:]).T
+        keypoints3d = points3d.reshape([-1, 33, 3])
+        
         self.isActive = False       
-        return params, keypoints3d
-    
-
-def estimate_initial_extrinsic(pts1, pts2, K):
-    # pts : (N,2)
-    E, mask = cv2.findEssentialMat(pts2, pts1, K, method=cv2.FM_LMEDS)
-    pts, R, t, mask = cv2.recoverPose(E, pts2, pts1, K)
-    return R, t
-
-def calibrate_cameras(camera_settings, keypoints2d_list, base_i=0, pair_i=1, reference_height=1.6):
-    n_frames, n_views, n_joints, _ = keypoints2d_list.shape
-
-    sample_points = []
-    for frame_i in range(n_frames):
-        for joint_i in range(n_joints):
-            points = keypoints2d_list[frame_i,:,joint_i]
-            if np.all(points[:,2] > 0.95): # すべてのカメラで検出した点のみ使用
-                sample_points.append(points[:,:2])
-    sample_points = np.array(sample_points).transpose([1,0,2]) # shape:(n_views, n_points, 2)
-    print(f"n_samples: {sample_points.shape[1]}")
-
-    pts1 = sample_points[base_i].reshape([-1,2])
-    pts2 = sample_points[pair_i].reshape([-1,2])
-    K = camera_settings[base_i].intrinsic_matrix
-    R, t = estimate_initial_extrinsic(pts1, pts2, K)
-
-    camera_params = {
-        base_i : {
-            'R': np.eye(3,3),
-            't': np.zeros([3,1]),
-            'proj_matrix': get_projection_matrix(K, np.eye(3,3), np.zeros([3,1]))
-        },
-        pair_i : {
-            'R': R,
-            't': t,
-            'proj_matrix': get_projection_matrix(K, R, t)
-        }
-    }
-
-    # 3次元復元
-    points3d = cv2.triangulatePoints(
-        camera_params[base_i]['proj_matrix'],
-        camera_params[pair_i]['proj_matrix'],
-        keypoints2d_list[:,base_i,:,:2].reshape([-1,2]).T,
-        keypoints2d_list[:,pair_i,:,:2].reshape([-1,2]).T
-    )
-    points3d = (points3d[:3,:] / points3d[3,:]).T
-
-    # ルームキャリブレーション
-    keypoints3d = points3d.reshape([-1, 33, 3])
-    keypoints3d_list = keypoints3d[5:30]
-
-    o_pos = determine_center_position(keypoints3d_list)
-    o_mat = determine_forward_rotation(keypoints3d)
-    o_rot = Rotation.from_matrix(o_mat)
-    scale = determine_scale(keypoints3d_list, Height=reference_height)
-
-    for i, camera_setting in enumerate(camera_settings):
-        t = o_rot.apply(camera_params[i]['t'].flatten() - o_pos).reshape([3,1]) * scale
-        R = (o_rot * Rotation.from_matrix(camera_params[i]['R'])).as_matrix()
-        Rc = R.T
-        tc = -R.T@t
-        camera_setting.extrinsic_matrix = np.concatenate([Rc,tc], axis=-1)
-        camera_params[i] = {
-            't': t.tolist(),
-            'R': R.tolist(),
-            'proj_matrix': get_projection_matrix(K, R, t).tolist()
-        }
-
-    # グローバル座標で3次元復元
-    points3d = cv2.triangulatePoints(
-        camera_settings[base_i].get_projection_matrix(),
-        camera_settings[pair_i].get_projection_matrix(),
-        keypoints2d_list[:,base_i,:,:2].reshape([-1,2]).T,
-        keypoints2d_list[:,pair_i,:,:2].reshape([-1,2]).T
-    )
-    points3d = (points3d[:3,:] / points3d[3,:]).T
-    keypoints3d = points3d.reshape([-1, 33, 3])
-    return camera_params, keypoints3d
+        return camera_params, keypoints3d
 
 
-def determine_center_position(keypoints3d_list):
-    # keypoints3d_list : (n_frames, n_joints, 3)
-    l_foot = keypoints3d_list[:, KEYPOINT_DICT['left_ankle']]
-    r_foot = keypoints3d_list[:, KEYPOINT_DICT['right_ankle']]
-    m_foot = (l_foot + r_foot) / 2
-    center_position = m_foot.mean(axis=0)
-    return center_position
-
-def determine_forward_rotation(keypoints3d_list):
-    # keypoints3d_list : (n_frames, n_joints, 3)   
-    
-    # 初めの数フレームの体の向きを使用する方法
-    keypoints3d_list = keypoints3d_list[5:25]
-    l_shoulder = keypoints3d_list[:, KEYPOINT_DICT['left_shoulder']]
-    r_shoulder = keypoints3d_list[:, KEYPOINT_DICT['right_shoulder']]
-    l_hips = keypoints3d_list[:, KEYPOINT_DICT['left_hip']]
-    r_hips = keypoints3d_list[:, KEYPOINT_DICT['right_hip']]    
-    m_hips = (l_hips + r_hips) / 2
-    forward_vector = np.cross(l_shoulder - m_hips, r_shoulder - m_hips).mean(axis=0)
-    forward = forward_vector / np.linalg.norm(forward_vector)
-    rotation_matrix = (forward.reshape([3,1]) @ np.array([0,0,1]).reshape([1,3])).astype(np.float32)
-    '''
-    # 移動方向を使用する方法
-    # 最初と最後の10フレームでそれぞれ平均姿勢を計算 -> (n_joints,3)
-    keypoints3d_1 = keypoints3d_list[5:15].mean(axis=0)
-    keypoints3d_2 = keypoints3d_list[-10:].mean(axis=0)
-    # 移動方向の計算に使用するキーポイント
-    indices = [KEYPOINT_DICT[name] for name in ['nose','left_shoulder','right_shoulder','left_hip','right_hip']]
-    # 移動方向を推定
-    forward_vectors = keypoints3d_2[indices] - keypoints3d_1[indices]    
-    forward_vector = forward_vectors.mean(axis=0)
-    # 正規化
-    forward = forward_vector / np.linalg.norm(forward_vector)
-    rotation_matrix = (forward.reshape([3,1]) @ np.array([0,0,1]).reshape([1,3])).astype(np.float32)'''
-    return rotation_matrix
-
-def determine_scale(keypoints3d_list, Height=1.0):
-    head = keypoints3d_list[:, KEYPOINT_DICT['nose']]
-    l_foot = keypoints3d_list[:, KEYPOINT_DICT['left_ankle']]
-    r_foot = keypoints3d_list[:, KEYPOINT_DICT['right_ankle']]
-    m_foot = (l_foot + r_foot) / 2
-    height = np.linalg.norm(head - m_foot, axis=-1).mean()
-    scale = Height / height
-    return scale
-
-def get_projection_matrix(K, R, t):
-    Rc = R.T
-    tc = -R.T@t
-    return K.dot(np.concatenate([Rc,tc], axis=-1))
-
-
-def calibration_process(config_path, height=1.6):
+def calibration_process(config_path, height=1.6, output_dir=None):
     from concurrent.futures import ThreadPoolExecutor
     from camera import USBCamera
     from visalization import draw_keypoints
@@ -185,6 +90,16 @@ def calibration_process(config_path, height=1.6):
     cameras = [USBCamera(camera_config) for camera_config in config['cameras']]
     for camera in cameras:
         camera.open()
+
+    # if save videos
+    if output_dir is not None:
+        writers = []
+        for camera in cameras:
+            path = f'{output_dir}/{camera.name}.mp4'
+            fmt = cv2.VideoWriter_fourcc('m','p','4','v')
+            writer = cv2.VideoWriter(path, fmt, 30.0, (960,540))
+            writers.append(writer)
+
 
     pose_estimators = [MediapipePose(model_complexity=2) for _ in config['cameras']]
 
@@ -200,12 +115,15 @@ def calibration_process(config_path, height=1.6):
             # send 2d pose estimation
             frames = []
             futures = []
-            for camera, pose_estimator in zip(cameras, pose_estimators):
+            for i, (camera, pose_estimator) in enumerate(zip(cameras, pose_estimators)):
                 frame = camera.get_image()
                 if frame is not None:
                     frames.append(frame)
                     future = executor.submit(pose_estimator.process, frame)
                     futures.append(future)
+                    # save video
+                    if output_dir is not None:
+                        writers[i].write(frame)
 
             # get 2d pose estimation results
             keypoints2d_list = []
@@ -237,12 +155,16 @@ def calibration_process(config_path, height=1.6):
     cv2.destroyAllWindows()
     
     # save calibration result
-    result = {
-        'camera_settings': params,
-        'keypoints3d': keypoints3d_list.tolist()
-    }
-    with open('./data/result.json', 'w') as f:
-        json.dump(result, f, indent=4)
+    if output_dir is not None:
+        result = {
+            'camera_settings': params,
+            'keypoints3d': keypoints3d_list.tolist()
+        }
+        with open(f'{output_dir}/result.json', 'w') as f:
+            json.dump(result, f, indent=4)
+
+        for writer in writers:
+            writer.release()
 
     return [camera.camera_setting for camera in cameras], keypoints3d_list 
 
@@ -251,8 +173,11 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
 
+    import PySimpleGUI as sg
+    output_dir = sg.popup_get_folder("保存先を選んでね")
+
     # calibration
-    camera_settings, keypoints3d_list = calibration_process(config_path="config1.json")
+    camera_settings, keypoints3d_list = calibration_process(config_path="config1.json", output_dir=output_dir)
 
     # visualize calibration result    
     fig = plt.figure()
@@ -274,9 +199,8 @@ if __name__ == '__main__':
             tc = camera_setting.extrinsic_matrix[:,3:]
             R = Rc.T
             t = -Rc.T@tc
-            ax.scatter(t[0,0], t[2,0], t[1,0], s=30, color='blue')
-            tt = R @ np.array([[0],[0],[0.5]]) + t
-            ax.plot([t[0,0], tt[0,0]], [t[2,0], tt[2,0]], [t[1,0], tt[1,0]], color='blue')
+            draw_camera(ax, R, t, color='blue')
+            
         plt.draw()
         plt.pause(0.01) 
         plt.cla()

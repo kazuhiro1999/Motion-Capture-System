@@ -7,19 +7,31 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from camera import CameraSetting
 from pose2d import MediapipePose
+import PySimpleGUI as sg
+
+from visalization import draw_camera
 
 
-def tangent_angle(u: np.ndarray, v: np.ndarray):
-    i = np.inner(u, v)
-    n = np.linalg.norm(u) * np.linalg.norm(v)
-    c = i / n
-    return np.rad2deg(np.arccos(np.clip(c, -1.0, 1.0)))
+def riemannian_distance(R, Rg):
+    """
+    Compute the Riemannian distance between two rotation matrices R and Rg.
+    """
+    # Compute the matrix logarithm of the product of R transpose and Rg
+    phi = np.arccos((np.trace(np.dot(R.T, Rg)) - 1) / 2)
+    log_value = (phi / (2 * np.sin(phi))) * (R - R.T)
+    
+    # Compute the Frobenius norm of the log_value
+    frobenius_norm = np.linalg.norm(log_value, 'fro')
+    
+    # Return the Riemannian distance
+    return (1/np.sqrt(2)) * frobenius_norm
 
 
 with open('./config1.json', 'r') as f:
     config = json.load(f)
 
-with open('./data/result.json', 'r') as f:
+filepath = sg.popup_get_file("評価するファイルを選んでね")
+with open(filepath, 'r') as f:
     result = json.load(f)
 
 camera_settings = [CameraSetting(camera_config['setting_path']) for camera_config in config['cameras']]
@@ -29,17 +41,15 @@ for i, camera_setting in enumerate(camera_settings):
     # カメラ（GT）
     Rc = camera_setting.extrinsic_matrix[:,:3]
     tc = camera_setting.extrinsic_matrix[:,3:]
-    R = Rc.T
-    t = -Rc.T@tc
-    tt = R @ np.array([[0],[0],[1]]) + t   
+    Rg = Rc.T
+    tg = -Rc.T@tc
     # カメラ（推定）
-    R1 = np.array(result['camera_settings'][str(i)]['R'])
-    t1 = np.array(result['camera_settings'][str(i)]['t'])
-    tt1 = R1 @ np.array([[0],[0],[1]]) + t1
+    R = np.array(result['camera_settings'][str(i)]['R'])
+    t = np.array(result['camera_settings'][str(i)]['t'])
     # 誤差
-    diff = np.linalg.norm(t1.flatten() - t.flatten())
-    angle = tangent_angle((tt1 - t1).flatten(), (tt - t).flatten())
-    print(f"camera{i}: diff={diff}, angle={angle}")
+    Et = np.linalg.norm(t.flatten() - tg.flatten())
+    Er = riemannian_distance(R, Rg)
+    print(f"camera{i}: E(t)={Et:.3f}, E(R)={Er:.3f}")
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
@@ -65,20 +75,16 @@ while not exit_loop:
             tc = camera_setting.extrinsic_matrix[:,3:]
             R = Rc.T
             t = -Rc.T@tc
-            ax.scatter(t[0,0], t[2,0], t[1,0], s=30, color='green')
-            tt = R @ np.array([[0],[0],[0.5]]) + t
-            ax.plot([t[0,0], tt[0,0]], [t[2,0], tt[2,0]], [t[1,0], tt[1,0]], color='green')        
+            draw_camera(ax, R, t, 'green')       
         # カメラ（推定）
         for i in result['camera_settings']:
             R = np.array(result['camera_settings'][i]['R'])
             t = np.array(result['camera_settings'][i]['t'])
-            ax.scatter(t[0,0], t[2,0], t[1,0], s=30, color='blue')
-            tt = R @ np.array([[0],[0],[0.5]]) + t
-            ax.plot([t[0,0], tt[0,0]], [t[2,0], tt[2,0]], [t[1,0], tt[1,0]], color='blue')
+            draw_camera(ax, R, t, 'blue')   
 
         plt.draw()
-        plt.pause(0.01) 
         if not plt.fignum_exists(1):
             exit_loop = True
-            break
+            break        
+        plt.pause(0.01) 
         plt.cla()

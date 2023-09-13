@@ -44,8 +44,9 @@ class USBCamera:
 
 class CameraSetting:
     def __init__(self, setting_path=None):
+        self.setting_path = setting_path
         if setting_path is not None:
-            self.load_config(setting_path)
+            self.load(setting_path)
         else:
             self.image_width = 0
             self.image_height = 0
@@ -54,8 +55,8 @@ class CameraSetting:
             self.extrinsic_matrix = np.eye(4)
             self.proj_matrix = self.get_projection_matrix()
 
-    def load_config(self, setting_path):
-        with open(setting_path) as f:
+    def load(self, setting_path):
+        with open(setting_path, 'r') as f:
             config = json.load(f)
             self.image_width = config.get('image_width', 0)
             self.image_height = config.get('image_height', 0)
@@ -63,6 +64,20 @@ class CameraSetting:
             self.distortion_coefficients = np.array(config.get('distortion_coefficients', np.zeros(5)))
             self.extrinsic_matrix = np.array(config.get('extrinsic_matrix', np.eye(4)))
             self.proj_matrix = self.get_projection_matrix()
+        self.setting_path = setting_path
+
+    def save(self):
+        if self.setting_path is None:
+            return
+        config = {
+            'image_width': self.image_width,
+            'image_height': self.image_height,
+            'intrinsic_matrix': self.intrinsic_matrix.tolist(),
+            'extrinsic_matrix': self.extrinsic_matrix.tolist(),
+            'distortion_coefficients': self.distortion_coefficients.tolist()
+        }
+        with open(self.setting_path, 'w') as f:
+            json.dump(config, f, indent=4)
 
     def get_projection_matrix(self):
         return self.intrinsic_matrix @ self.extrinsic_matrix

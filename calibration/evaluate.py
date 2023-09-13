@@ -27,7 +27,7 @@ def riemannian_distance(R, Rg):
     return (1/np.sqrt(2)) * frobenius_norm
 
 
-with open('./config1.json', 'r') as f:
+with open(r'C:\Users\xr\Projects\Motion-Capture-System\data\config.json', 'r') as f:
     config = json.load(f)
 
 filepath = sg.popup_get_file("評価するファイルを選んでね")

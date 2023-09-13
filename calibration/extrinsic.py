@@ -48,7 +48,8 @@ def calibrate_cameras(camera_settings, keypoints2d_list, base_i=0, pair_i=1, min
     )
     points3d = (points3d[:3,:] / points3d[3,:]).T
 
-    keypoints3d = points3d.reshape([-1, 33, 3])    
+    keypoints3d = points3d.reshape([-1, 33, 3])  
+    print('initial calibration end.')  
     return camera_params, keypoints3d
 
 

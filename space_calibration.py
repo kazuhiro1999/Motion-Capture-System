@@ -27,10 +27,9 @@ class SpaceCalibrator:
         self.isActive = True
 
     def add_samples(self, keypoints2d_list):
-        keypoints2d_list = np.array(keypoints2d_list)
-        n_views, n_joints, _ = keypoints2d_list.shape        
-        if n_views != self.n_cameras:
+        if len(keypoints2d_list) != self.n_cameras:
             return
+        keypoints2d_list = np.array(keypoints2d_list)
         self.samples.append(keypoints2d_list)
 
     def is_sampled(self):
@@ -66,8 +65,8 @@ class SpaceCalibrator:
 
         # グローバル座標で3次元復元
         points3d = cv2.triangulatePoints(
-            camera_settings[base_i].get_projection_matrix(),
-            camera_settings[pair_i].get_projection_matrix(),
+            self.camera_settings[base_i].get_projection_matrix(),
+            self.camera_settings[pair_i].get_projection_matrix(),
             keypoints2d_list[:,base_i,:,:2].reshape([-1,2]).T,
             keypoints2d_list[:,pair_i,:,:2].reshape([-1,2]).T
         )
@@ -82,6 +81,9 @@ def calibration_process(config_path, height=1.6, output_dir=None):
     from concurrent.futures import ThreadPoolExecutor
     from camera import USBCamera
     from visalization import draw_keypoints
+    from utils import TimeUtil
+
+    t_list = []
     
     with open(config_path, 'r') as f:
         config = json.load(f)
@@ -105,13 +107,15 @@ def calibration_process(config_path, height=1.6, output_dir=None):
 
     keypoints2d_list = []
     
-    calibrator = SpaceCalibrator()
+    calibrator = SpaceCalibrator(reference_height=height)
     calibrator.start_calibration([camera.camera_setting for camera in cameras])
 
     print("sampling...")
     # Main loop
     with ThreadPoolExecutor(max_workers=4) as executor:
         while True:
+            t = TimeUtil.get_unixtime()
+            t_list.append(t)
             # send 2d pose estimation
             frames = []
             futures = []
@@ -138,7 +142,6 @@ def calibration_process(config_path, height=1.6, output_dir=None):
             # add sample
             if calibrator.isActive:
                 calibrator.add_samples(keypoints2d_list)
-                print(len(calibrator.samples))
                 if calibrator.is_sampled():
                     params, keypoints3d_list = calibrator.calibrate()
                     print("calibration ended")
@@ -155,9 +158,13 @@ def calibration_process(config_path, height=1.6, output_dir=None):
     cv2.destroyAllWindows()
     
     # save calibration result
+    for camera in cameras:
+        camera.camera_setting.save()
+
     if output_dir is not None:
         result = {
             'camera_settings': params,
+            'timestamps': t_list,
             'keypoints3d': keypoints3d_list.tolist()
         }
         with open(f'{output_dir}/result.json', 'w') as f:
@@ -177,7 +184,7 @@ if __name__ == '__main__':
     output_dir = sg.popup_get_folder("保存先を選んでね")
 
     # calibration
-    camera_settings, keypoints3d_list = calibration_process(config_path="config1.json", output_dir=output_dir)
+    camera_settings, keypoints3d_list = calibration_process(config_path="config.json", output_dir=output_dir)
 
     # visualize calibration result    
     fig = plt.figure()

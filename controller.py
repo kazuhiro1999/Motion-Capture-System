@@ -1,8 +1,9 @@
+from queue import Empty
 import cv2
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import Process, Event
+from multiprocessing import Process, Event, Queue
 
 from utils import TimeUtil
 from camera import USBCamera
@@ -10,65 +11,116 @@ from pose2d import MediapipePose
 from pose3d import recover_pose_3d
 from network import UDPClient
 from data import to_dict
-from multiprocess import process_start
+from multiprocess import capture_process
 from visalization import draw_keypoints3d
 
 
 class MotionCaptureController:
     def __init__(self):
+        """Initialize the MotionCaptureController."""
         self.config = None
         self.is_playing = False
-        self.host = '127.0.0.1'
-        self.port = 50000
+        self.queue = Queue()
         self.debug = False
 
-    def initialize(self, config_path, udp_host, udp_port):
-        self.config = self.load_config(config_path)
-        self.host = udp_host
-        self.port = udp_port
-        print(f"Capture initialized with config: {config_path} and UDP Port: {udp_port}")
+    def initialize(self, config_path):
+        """
+        Load the configuration file.
 
-    def start_capture(self, mode='default'):
+        Args:
+            config_path (str): Path to the configuration file.
+        """
+        try:
+            self.config = self.load_config(config_path)
+            print(f"Capture initialized with config: {config_path}")
+            return True
+        except Exception as e:
+            print(f"Failed to initialize with config {config_path}: {e}")
+            return False
+
+    def get_data(self, timeout=1.0):
+        """
+        Fetch data from the queue if available.
+
+        Args:
+            timeout (float): Max time in seconds to wait for data.
+
+        Returns:
+            dict or None: Retrieved data or None if not available.
+        """
+        if not self.is_playing:
+            return None
+        try:
+            data = self.queue.get(timeout=timeout)
+            return data
+        except Empty:
+            return None
+
+    def start_capture(self, mode='multi-process'):
+        """
+        Start the motion capture process.
+
+        Args:
+            mode (str): Mode to run the capture process. Options are 'default', 'multi-thread', and 'multi-process'.
+
+        Returns:
+            str: Status message.
+        """
         if self.is_playing:
             return 'Capture has already started'
         
-        if self.config is None or self.port is None:
+        if self.config is None:
             return 'Capture is not initialized yet. Please call initialize() before start.'
 
         self.is_playing = True
         self.mode = mode
+
         if mode == 'default':
             print("capture started at main thread. Press ESC to end capture.")
-            self.capture_process()
+            self.capture_thread()
         elif mode == 'multi-thread':
-            self.capture_thread = threading.Thread(target=self.capture_process)
+            self.capture_thread = threading.Thread(target=self.capture_thread)
             self.capture_thread.start()
             print("capture thread started")
         elif mode == 'multi-process':
             self.cancel_event = Event()
-            self.proc = Process(target=process_start, args=(self.config, self.host, self.port, self.cancel_event))
+            self.proc = Process(target=capture_process, args=(self.config, self.queue, self.cancel_event))
             self.proc.start()            
             print("capture process started")
         else:
-            raise Exception(f"unknown capture mode : {mode}")
+            raise Exception(f"Unknown capture mode : {mode}")
         return "Success to start capture"
 
     def end_capture(self):
+        """
+        End the motion capture process.
+
+        Returns:
+            str: Status message.
+        """
         if not self.is_playing:
             return "Capture has not been started"
         
         self.is_playing = False
+
         if self.mode == 'multi-thread':
             self.capture_thread.join()
         elif self.mode == 'multi-process':
             self.cancel_event.set()
             self.proc.join()
             self.proc.terminate()
-        else:
-            pass
         return "Capture ended"
 
     def load_config(self, config_path):
+        """
+        Load configuration from a file.
+
+        Args:
+            config_path (str): Path to the configuration file.
+
+        Returns:
+            dict or None: Loaded configuration or None if failed.
+        """
         try:
             with open(config_path, 'r') as f:
                 config = json.load(f)
@@ -77,7 +129,8 @@ class MotionCaptureController:
             print(f"Failed to load config: {e}")
             return None
 
-    def capture_process(self):
+
+    def capture_thread(self):
         # Initialize Motion Capture
         cameras = [USBCamera(camera_config) for camera_config in self.config['cameras']]
         for camera in cameras:
@@ -112,8 +165,9 @@ class MotionCaptureController:
                 future_keypoints3d = executor.submit(recover_pose_3d, proj_matrices, keypoints2d_list)
 
                 keypoints3d = future_keypoints3d.result()
-                data = to_dict(timestamp, keypoints3d, MediapipePose.KEYPOINT_DICT, MediapipePose.Type)                
-                ret = udp_client.send(data)
+                data = to_dict(timestamp, keypoints3d, MediapipePose.KEYPOINT_DICT, MediapipePose.Type)    
+                self.queue.put(data)            
+                #ret = udp_client.send(data)
 
                 if self.debug:
                     draw_keypoints3d(keypoints3d, pose_estimator.KINEMATIC_TREE)  # for visualization

@@ -6,7 +6,6 @@ from queue import Empty
 from utils import TimeUtil
 from camera import USBCamera
 from pose2d import MediapipePose
-from network import UDPClient
 from pose3d import recover_pose_3d
 from data import to_dict
 
@@ -43,7 +42,7 @@ def camera_process(camera_config, event, queue, cancel_event):
     print(f"process {camera_config['name']} ended")
 
 
-def process_start(config, host, port, cancel_event):
+def capture_process(config, queue_out, cancel_event):
     # Initialize Motion Capture
     processes = []
     queues = []
@@ -58,9 +57,6 @@ def process_start(config, host, port, cancel_event):
         events.append(event)
 
         process.start()
-
-    udp_client = UDPClient(host=host, port=port)
-    udp_client.open()
 
     print("capture start")
 
@@ -94,12 +90,10 @@ def process_start(config, host, port, cancel_event):
 
         # 3D pose estimation 
         keypoints3d = recover_pose_3d(proj_matrices, keypoints2d_list)
-        data = to_dict(timestamp, keypoints3d, MediapipePose.KEYPOINT_DICT, MediapipePose.Type)              
-        _ = udp_client.send(data)
+        data = to_dict(timestamp, keypoints3d, MediapipePose.KEYPOINT_DICT, MediapipePose.Type)  
+        queue_out.put(data)            
 
         timestamp = t_next
-
-    udp_client.close()
 
     # End subprocess
     for process in processes:
@@ -110,20 +104,5 @@ def process_start(config, host, port, cancel_event):
     cv2.destroyAllWindows()
     print("capture ended")
 
-
-if __name__ == "__main__":
-
-    with open("config1.json", 'r') as f:
-        config = json.load(f)
-
-    cancel_event = Event()
-    proc = Process(target=process_start, args=(config, '127.0.0.1', 50000, cancel_event))
-    proc.start()
-
-    input()
-
-    cancel_event.set()
-    proc.join()
-    proc.terminate()
 
     

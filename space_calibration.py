@@ -11,7 +11,7 @@ KEYPOINT_DICT = MediapipePose.KEYPOINT_DICT
 
 class SpaceCalibrator:
 
-    def __init__(self, num_samples=300, min_confidence=0.5, reference_height=1.6):
+    def __init__(self, num_samples=300, min_confidence=0.95, reference_height=1.6):
         self.camera_settings = []
         self.n_cameras = 0
         self.samples = []
@@ -36,7 +36,6 @@ class SpaceCalibrator:
         return len(self.samples) > self.num_samples
     
     def calibrate(self, base_i=0, pair_i=1):
-        print("start calibration...")
         keypoints2d_list = np.array(self.samples)
         n_frames, n_views, n_joints, _ = keypoints2d_list.shape
         
@@ -44,7 +43,7 @@ class SpaceCalibrator:
         keypoints3d_list = keypoints3d[5:30]
 
         # ルームキャリブレーション用の初期パラメータ
-        s0 = determine_scale(keypoints3d_list, Height=self.reference_height)
+        s0 = determine_scale(keypoints3d_list, height=self.reference_height)
         p0 = determine_center_position(keypoints3d_list)
         forward = determine_forward_vector(keypoints3d_list)
         up = determine_upward_vector(keypoints3d_list)

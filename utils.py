@@ -1,11 +1,20 @@
 import time
 
 class TimeUtil:
+    Offset = 0
 
     # return unix milliseconds
     @staticmethod
     def get_unixtime():
-        return int(time.time()*1000)
+        current_time = time.time() + TimeUtil.Offset
+        return int(current_time*1000)
+    
+    # set unixtime
+    @staticmethod
+    def set_unixtime(ut):
+        offset = ut - time.time()
+        TimeUtil.Offset = offset
+        return offset
 
 
 import time

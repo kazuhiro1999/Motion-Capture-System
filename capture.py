@@ -15,30 +15,25 @@ from multiprocess import capture_process
 from visalization import draw_keypoints3d
 
 
-class MotionCaptureController:
-    def __init__(self):
-        """Initialize the MotionCaptureController."""
+class Status:
+    UNINITIALIZED = "uninitialized"
+    INITIALIZED = "initialized"
+    CAPTURING = "capturing"
+
+class MotionCapture:
+
+    def __init__(self, config_path=None):
+        """Initialize the MotionCapture."""
         self.config = None
         self.is_playing = False
         self.queue = Queue()
         self.debug = False
+        self.status = Status.UNINITIALIZED
+        
+        if config_path:
+            self.load_config(config_path)
 
-    def initialize(self, config_path):
-        """
-        Load the configuration file.
-
-        Args:
-            config_path (str): Path to the configuration file.
-        """
-        try:
-            self.config = self.load_config(config_path)
-            print(f"Capture initialized with config: {config_path}")
-            return True
-        except Exception as e:
-            print(f"Failed to initialize with config {config_path}: {e}")
-            return False
-
-    def get_data(self, timeout=1.0):
+    def read(self, timeout=1.0):
         """
         Fetch data from the queue if available.
 
@@ -48,15 +43,14 @@ class MotionCaptureController:
         Returns:
             dict or None: Retrieved data or None if not available.
         """
-        if not self.is_playing:
+        if self.status != Status.CAPTURING:
             return None
         try:
-            data = self.queue.get(timeout=timeout)
-            return data
+            return self.queue.get(timeout=timeout)
         except Empty:
             return None
 
-    def start_capture(self, mode='multi-process'):
+    def start(self, mode='multi-process'):
         """
         Start the motion capture process.
 
@@ -66,11 +60,11 @@ class MotionCaptureController:
         Returns:
             str: Status message.
         """
-        if self.is_playing:
+        if self.status == Status.CAPTURING:
             return 'Capture has already started'
         
-        if self.config is None:
-            return 'Capture is not initialized yet. Please call initialize() before start.'
+        if self.status == Status.UNINITIALIZED:
+            return 'Capture is not initialized yet.'
 
         self.is_playing = True
         self.mode = mode
@@ -89,16 +83,18 @@ class MotionCaptureController:
             print("capture process started")
         else:
             raise Exception(f"Unknown capture mode : {mode}")
+        
+        self.status = Status.CAPTURING
         return "Success to start capture"
 
-    def end_capture(self):
+    def end(self):
         """
         End the motion capture process.
 
         Returns:
             str: Status message.
         """
-        if not self.is_playing:
+        if self.status != Status.CAPTURING:
             return "Capture has not been started"
         
         self.is_playing = False
@@ -109,6 +105,8 @@ class MotionCaptureController:
             self.cancel_event.set()
             self.proc.join()
             self.proc.terminate()
+        
+        self.status = Status.INITIALIZED
         return "Capture ended"
 
     def load_config(self, config_path):
@@ -123,11 +121,21 @@ class MotionCaptureController:
         """
         try:
             with open(config_path, 'r') as f:
-                config = json.load(f)
-            return config
+                self.config = json.load(f)
         except Exception as e:
             print(f"Failed to load config: {e}")
             return None
+        
+        self.status = Status.INITIALIZED
+        return self.config
+    
+    def calibrate(self):
+        """
+        Calibrate the motion capture system.
+        
+        This function is a placeholder for future implementation.
+        """
+        pass
 
 
     def capture_thread(self):

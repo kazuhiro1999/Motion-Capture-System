@@ -2,7 +2,7 @@ import argparse
 import os
 import cv2
 import numpy as np
-from controller import MotionCaptureController
+from capture import MotionCapture
 
 
 def get_args():
@@ -18,20 +18,18 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(script_dir, args.config)
 
-    controller = MotionCaptureController()
-    controller.initialize(config_path=config_path)
-    
-    #controller.debug = True
-    controller.start_capture(mode='multi-process')
+    capture = MotionCapture(config_path)
+    capture.start(mode='multi-process')
     
     while True:
-        data = controller.get_data()
+        data = capture.read()
+        print(data is not None)
         if data:
-            cv2.imshow(data['TimeStamp'], np.zeros([64,64]))
+            cv2.imshow("manager", np.zeros([160,90]))
         if cv2.waitKey(1) == 27:
             break
 
-    controller.end_capture()
+    capture.end()
 
 
 if __name__ == '__main__':

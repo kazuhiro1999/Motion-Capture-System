@@ -1,52 +1,65 @@
 import json
 import cv2
 import numpy as np
-from calibration.extrinsic import calibrate_cameras, get_projection_matrix
+
+from calibration.extrinsic import calibrate_cameras
 from calibration.room import *
 from pose2d import MediapipePose
-from visalization import draw_camera
 
 KEYPOINT_DICT = MediapipePose.KEYPOINT_DICT
 
 
 class SpaceCalibrator:
 
-    def __init__(self, num_samples=300, min_confidence=0.95, reference_height=1.6):
+    def __init__(self, num_samples=300, min_confidence=0.95):
+        self.num_samples = num_samples
+        self.min_confidence = min_confidence
         self.camera_settings = []
         self.n_cameras = 0
         self.samples = []
-        self.num_samples = num_samples
-        self.min_confidence = min_confidence
-        self.reference_height = reference_height
+        self.timestamps = []
         self.isActive = False
 
     def start_calibration(self, camera_settings):
+        """
+        Initialize the calibration process.
+        """
         self.samples = []
+        self.timestamps = []
+        if len(camera_settings) == 0:
+            raise ValueError("No camera settings provided.")
         self.camera_settings = camera_settings
         self.n_cameras = len(camera_settings)
-        self.isActive = True
 
-    def add_samples(self, keypoints2d_list):
+    def add_sample(self, timestamp, keypoints2d_list):
+        """
+        Add a sample for calibration.
+        """
+        keypoints2d_list = np.array(keypoints2d_list)
         if len(keypoints2d_list) != self.n_cameras:
             return
-        keypoints2d_list = np.array(keypoints2d_list)
+        self.timestamps.append(timestamp)
         self.samples.append(keypoints2d_list)
 
     def is_sampled(self):
+        """
+        Check if enough samples have been collected.
+        """
         return len(self.samples) > self.num_samples
     
-    def calibrate(self, base_i=0, pair_i=1):
+    def calibrate_cameras(self, base_i=0, pair_i=1, reference_height=1.0):
+        """
+        Perform calibration using the collected samples.
+        """
         keypoints2d_list = np.array(self.samples)
-        n_frames, n_views, n_joints, _ = keypoints2d_list.shape
         
-        camera_params, keypoints3d = calibrate_cameras(self.camera_settings, keypoints2d_list, base_i, pair_i) 
-        keypoints3d_list = keypoints3d[5:30]
+        camera_params, keypoints3d = calibrate_cameras(self.camera_settings, keypoints2d_list, base_i, pair_i, self.min_confidence)  
 
         # ルームキャリブレーション用の初期パラメータ
-        s0 = determine_scale(keypoints3d_list, height=self.reference_height)
-        p0 = determine_center_position(keypoints3d_list)
-        forward = determine_forward_vector(keypoints3d_list)
-        up = determine_upward_vector(keypoints3d_list)
+        s0 = determine_scale(keypoints3d, height=reference_height)
+        p0 = determine_center_position(keypoints3d)
+        forward = determine_forward_vector(keypoints3d)
+        up = determine_upward_vector(keypoints3d)
         R0 = rotation_matrix_from_vectors(forward, up)
         t0 = -R0 @ (p0 * s0) 
 
@@ -54,13 +67,8 @@ class SpaceCalibrator:
             R = R0 @ camera_params[i]['R']
             t = R0 @ (s0 * camera_params[i]['t']) + t0.reshape([3,1])         
             Rc = R.T
-            tc = -R.T@t
+            tc = -R.T @ t
             camera_setting.extrinsic_matrix = np.concatenate([Rc,tc], axis=-1)
-            camera_params[i] = {
-                't': t.tolist(),
-                'R': R.tolist(),
-                'proj_matrix': get_projection_matrix(camera_setting.intrinsic_matrix, R, t).tolist()
-            }
 
         # グローバル座標で3次元復元
         points3d = cv2.triangulatePoints(
@@ -73,7 +81,7 @@ class SpaceCalibrator:
         keypoints3d = points3d.reshape([-1, 33, 3])
         
         self.isActive = False       
-        return camera_params, keypoints3d
+        return self.camera_settings, keypoints3d
 
 
 def calibration_process(config_path, height=1.6, output_dir=None):
@@ -142,7 +150,7 @@ def calibration_process(config_path, height=1.6, output_dir=None):
             if calibrator.isActive:
                 calibrator.add_samples(keypoints2d_list)
                 if calibrator.is_sampled():
-                    params, keypoints3d_list = calibrator.calibrate()
+                    params, keypoints3d_list = calibrator.calibrate_cameras()
                     print("calibration ended")
                     break
 
@@ -178,6 +186,7 @@ def calibration_process(config_path, height=1.6, output_dir=None):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
+    from visalization import draw_camera
 
     import PySimpleGUI as sg
     output_dir = sg.popup_get_folder("保存先を選んでね")

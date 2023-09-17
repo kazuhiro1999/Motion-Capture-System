@@ -4,16 +4,17 @@ from multiprocessing import Process, Queue, Event
 from queue import Empty
 
 from utils import TimeUtil
-from camera import USBCamera
+from camera import CameraSetting, USBCamera
 from pose2d import MediapipePose
 from pose3d import recover_pose_3d
 from data import to_dict
+from visalization import draw_keypoints
 
 
-def camera_process(camera_config, event, queue, cancel_event):
+def camera_process(camera_config, event, queue_out, cancel_event, model_complexity=1):
     camera = USBCamera(camera_config)
     camera.open()
-    pose_estimator = MediapipePose()
+    pose_estimator = MediapipePose(model_complexity=model_complexity)
     print(f"process {camera_config['name']} initialized")
 
     while not cancel_event.is_set():
@@ -26,15 +27,12 @@ def camera_process(camera_config, event, queue, cancel_event):
 
         frame = camera.get_image()
         if frame is not None:
-            cv2.imshow(camera.name, cv2.resize(frame, dsize=(640,360)))
             keypoints2d = pose_estimator.process(frame)
+            debug_image = draw_keypoints(frame, keypoints2d, MediapipePose.KINEMATIC_TREE)
+            cv2.imshow(camera.name, cv2.resize(debug_image, dsize=(640,360)))
 
-            if keypoints2d is not None:
-                proj_matrix = camera.camera_setting.proj_matrix
-                # Put the result into the queue
-                queue.put((proj_matrix, keypoints2d))
-            else:
-                queue.put((None, None))
+        # Put the result into the queue
+        queue_out.put((frame, keypoints2d))
 
         cv2.waitKey(1)
 
@@ -47,6 +45,7 @@ def capture_process(config, queue_out, cancel_event):
     processes = []
     queues = []
     events = []
+    camera_settings = []
     for camera_config in config['cameras']:
         queue = Queue()
         event = Event()
@@ -57,6 +56,9 @@ def capture_process(config, queue_out, cancel_event):
         events.append(event)
 
         process.start()
+
+        camera_setting = CameraSetting(camera_config['setting_path'])
+        camera_settings.append(camera_setting)
 
     print("capture start")
 
@@ -73,13 +75,13 @@ def capture_process(config, queue_out, cancel_event):
         keypoints2d_list = []
         proj_matrices = []
 
-        for queue in queues:
+        for i, queue in enumerate(queues):
             try:
-                proj_matrix, keypoints2d = queue.get(timeout=1.0)                
+                frame, keypoints2d = queue.get(timeout=1.0)                
             except Empty:
                 continue
             if keypoints2d is not None:
-                proj_matrices.append(proj_matrix)
+                proj_matrices.append(camera_settings[i].proj_matrix)
                 keypoints2d_list.append(keypoints2d)
 
         # Send signal to start next processing

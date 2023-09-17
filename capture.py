@@ -1,17 +1,18 @@
-from queue import Empty
 import cv2
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Process, Event, Queue
+from queue import Empty
 
 from utils import TimeUtil
-from camera import USBCamera
+from camera import CameraSetting, USBCamera
 from pose2d import MediapipePose
 from pose3d import recover_pose_3d
 from network import UDPClient
 from data import to_dict
-from multiprocess import capture_process
+from multiprocess import camera_process, capture_process
+from space_calibration import SpaceCalibrator
 from visalization import draw_keypoints3d
 
 
@@ -19,15 +20,19 @@ class Status:
     UNINITIALIZED = "uninitialized"
     INITIALIZED = "initialized"
     CAPTURING = "capturing"
+    CALIBRATING = "calibrating"
+
 
 class MotionCapture:
 
     def __init__(self, config_path=None):
         """Initialize the MotionCapture."""
+        self.config_path = config_path
         self.config = None
         self.is_playing = False
         self.queue = Queue()
         self.debug = False
+        self.calibrator = SpaceCalibrator()
         self.status = Status.UNINITIALIZED
         
         if config_path:
@@ -61,10 +66,13 @@ class MotionCapture:
             str: Status message.
         """
         if self.status == Status.CAPTURING:
-            return 'Capture has already started'
+            return False, 'Capture has already started'
         
         if self.status == Status.UNINITIALIZED:
-            return 'Capture is not initialized yet.'
+            return False, 'Capture is not initialized yet.'
+        
+        if self.status == Status.CALIBRATING:
+            return False, 'Cannot start capture. Calibration is in progress.'
 
         self.is_playing = True
         self.mode = mode
@@ -85,7 +93,7 @@ class MotionCapture:
             raise Exception(f"Unknown capture mode : {mode}")
         
         self.status = Status.CAPTURING
-        return "Success to start capture"
+        return True, "Success to start capture"
 
     def end(self):
         """
@@ -95,8 +103,8 @@ class MotionCapture:
             str: Status message.
         """
         if self.status != Status.CAPTURING:
-            return "Capture has not been started"
-        
+            return False, "Capture has not been started"
+                
         self.is_playing = False
 
         if self.mode == 'multi-thread':
@@ -107,7 +115,7 @@ class MotionCapture:
             self.proc.terminate()
         
         self.status = Status.INITIALIZED
-        return "Capture ended"
+        return True, "Capture ended"
 
     def load_config(self, config_path):
         """
@@ -117,25 +125,101 @@ class MotionCapture:
             config_path (str): Path to the configuration file.
 
         Returns:
-            dict or None: Loaded configuration or None if failed.
+            bool: True if config loaded successfully, False otherwise.
+            str: Message indicating the result.
         """
         try:
             with open(config_path, 'r') as f:
                 self.config = json.load(f)
+            self.config_path = config_path
+            self.status = Status.INITIALIZED
+            return True, "Config loaded successfully"
         except Exception as e:
-            print(f"Failed to load config: {e}")
-            return None
-        
-        self.status = Status.INITIALIZED
-        return self.config
+            return False, f"Failed to load config: {e}"
     
-    def calibrate(self):
+    def calibrate(self, reference_height=1.6):
         """
         Calibrate the motion capture system.
-        
-        This function is a placeholder for future implementation.
         """
-        pass
+        if self.status != Status.INITIALIZED:
+            return False, "Cannot calibrate. Capture is not initialized."
+                
+        self.status = Status.CALIBRATING  # キャリブレーション開始時にステータスを更新
+
+        # Initialize 
+        processes = []
+        queues = []
+        events = []
+        camera_settings = []
+        cancel_event = Event()
+        try:
+            for camera_config in self.config['cameras']:
+                queue = Queue()
+                event = Event()
+                process = Process(target=camera_process, args=(camera_config, event, queue, cancel_event))
+
+                processes.append(process)
+                queues.append(queue)
+                events.append(event)
+
+                process.start()
+
+                camera_setting = CameraSetting(camera_config['setting_path'])
+                camera_settings.append(camera_setting)
+
+            if len(camera_settings) == 0:
+                raise ValueError("No camera settings provided.")
+            
+            # Start calibration
+            self.calibrator.start_calibration(camera_settings)
+
+            # Main loop
+            while not self.calibrator.is_sampled():
+                # Send signal to start processing
+                for event in events:
+                    event.set()
+
+                timestamp = TimeUtil.get_unixtime()
+
+                # Collect results from each process
+                keypoints2d_list = []
+
+                for queue in queues:
+                    try:
+                        frame, keypoints2d = queue.get(timeout=1.0)
+                    except Empty:
+                        continue
+                    if keypoints2d is not None:
+                        keypoints2d_list.append(keypoints2d)
+
+                # add sample
+                self.calibrator.add_sample(timestamp, keypoints2d_list)
+
+            # execute camera calibration
+            camera_settings, keypoints3d_list = self.calibrator.calibrate_cameras(reference_height=reference_height)
+
+            # save calibration result
+            for camera_setting in camera_settings:
+                camera_setting.save()
+
+            # reload config
+            self.load_config(self.config_path)
+            self.status = Status.INITIALIZED  # キャリブレーション終了後にステータスを更新
+            print("calibration ended")
+            
+            return True, "Calibration successful"
+
+        except Exception as e:
+            return False, f"Error occurred during calibration: {e}"
+
+        finally:
+            # End subprocess
+            cancel_event.set()
+            for process in processes:
+                process.join()
+                process.terminate()
+
+            cv2.destroyAllWindows() 
 
 
     def capture_thread(self):

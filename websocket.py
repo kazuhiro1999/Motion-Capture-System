@@ -3,6 +3,8 @@ import os
 import threading
 import time
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
+from pose2d import MediapipePose
+from data import to_dict
 from capture import MotionCapture, Status
 
 
@@ -104,20 +106,28 @@ def handle_capture(ws: MotionCaptureWebSocket, request: Request):
 
 def handle_calibration(ws: MotionCaptureWebSocket, request: Request):
     """Handles calibration requests."""
-    output_dir = './data'
-    try:
-        if request.action == 'start':
-            reference_height = request.data.get('height', 1.6)  # Default to 1.6 if height is not provided
-            ws.send_response(request.type, request.action, "initialized")
-
-            # Start calibration
-            success, res = m_capture.calibrate(reference_height=reference_height)
+    try:            
+        if request.action == 'init':
+            # Initialize calibration
+            success, res = m_capture.init_calibration()
             if success:
-                ws.send_response(request.type, request.action, "finished", res)
+                ws.send_response(request.type, request.action, "initialized", res)
             else:
                 ws.send_response(request.type, request.action, "failed", res)
                 return
 
+        elif request.action == 'start':
+            reference_height = request.data.get('height', 1.6)  # Default to 1.6 if height is not provided
+
+            # Start calibration
+            success, res = m_capture.start_calibration(reference_height=reference_height)
+
+            if success:
+                ws.send_response(request.type, request.action, "finished", res)
+            else:
+                ws.send_response(request.type, request.action, "failed", res)
+                return            
+            
         elif request.action == "trajectry":
             trajectory_data = request.data
             success, res = m_capture.correct_calibration_with_hmd_trajectory(trajectory_data)
@@ -139,11 +149,11 @@ def handle_calibration(ws: MotionCaptureWebSocket, request: Request):
 def data_sender(ws: MotionCaptureWebSocket):
     """Send data fetched from the motion capture to the client."""
     while m_capture.is_playing:
-        data = m_capture.read()
-        if data:
+        timestamp, keypoints2d_list, keypoints3d = m_capture.read()
+        if timestamp:
+            data = to_dict(timestamp, keypoints3d, MediapipePose.KEYPOINT_DICT, MediapipePose.Type)
             ws.send_pose(data)
         time.sleep(0.01)
-
 
 
 if __name__ == '__main__':

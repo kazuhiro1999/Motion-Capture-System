@@ -221,6 +221,12 @@ class MotionCapture:
 
             cv2.destroyAllWindows() 
 
+    def correct_calibration_with_hmd_trajectory(self, trajectory_data):
+        try:
+            self.calibrator.correct_calibration_with_hmd_trajectory(trajectory_data)
+            return True, "Room calibration with HMD successful"
+        except Exception as e:
+            return False, f"Error occurred during room calibration: {e}"
 
     def capture_thread(self):
         # Initialize Motion Capture

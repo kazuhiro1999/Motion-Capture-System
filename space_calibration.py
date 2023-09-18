@@ -4,6 +4,7 @@ import numpy as np
 
 from calibration.extrinsic import calibrate_cameras
 from calibration.room import *
+from calibration.trajectory import best_fit_transform_kabsch, extract_hmd_trajectory
 from pose2d import MediapipePose
 
 KEYPOINT_DICT = MediapipePose.KEYPOINT_DICT
@@ -78,10 +79,41 @@ class SpaceCalibrator:
             keypoints2d_list[:,pair_i,:,:2].reshape([-1,2]).T
         )
         points3d = (points3d[:3,:] / points3d[3,:]).T
-        keypoints3d = points3d.reshape([-1, 33, 3])
+        self.keypoints3d = points3d.reshape([-1, 33, 3])
         
         self.isActive = False       
-        return self.camera_settings, keypoints3d
+        return self.camera_settings, self.keypoints3d
+    
+    def correct_calibration_with_hmd_trajectory(self, trajectory_data):
+        """
+        Correct room calibration using the HMD trajectory data.
+
+        Args:
+            trajectory_data (dict): The trajectory data received from HMD.
+
+        Returns:
+            bool: True if calibration correction was successful, False otherwise.
+            str: Status message indicating the result.
+        """
+        # Extract HMD trajectory based on timestamps
+        hmd_trajectory = extract_hmd_trajectory(trajectory_data, self.timestamps)
+
+        # Use 'nose' as predicted HMD trajectry
+        hmd_trajectory_pred = self.keypoints3d[:,KEYPOINT_DICT['nose']]
+
+        # Use Kabsch algorithm to get the best fit transform
+        Rs, Ts = best_fit_transform_kabsch(hmd_trajectory_pred, hmd_trajectory, translation=False)
+            
+        # Apply the rotation to update camera setting
+        for camera_setting in self.camera_settings:
+            R = Rs @ camera_setting.extrinsic_matrix[:,:3]
+            t = Rs @ camera_setting.extrinsic_matrix[:,:3] + Ts.reshape([3,1])
+            Rc = R.T
+            tc = -R.T @ t
+            camera_setting.extrinsic_matrix = np.concatenate([Rc,tc], axis=-1)
+            camera_setting.save()  # Save updated settings
+
+        return self.camera_settings
 
 
 def calibration_process(config_path, height=1.6, output_dir=None):

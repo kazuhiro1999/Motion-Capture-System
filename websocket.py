@@ -119,10 +119,13 @@ def handle_calibration(ws: MotionCaptureWebSocket, request: Request):
                 return
 
         elif request.action == "trajectry":
-            trajectry = request.data
-            with open(f"{output_dir}/trajectry.json", 'w') as f:
-                json.dump(trajectry, f, indent=4)
-            ws.send_response(request.type, request.action, "success")
+            trajectory_data = request.data
+            success, res = m_capture.correct_calibration_with_hmd_trajectory(trajectory_data)
+            if success:
+                ws.send_response(request.type, request.action, "success", res)
+            else:
+                ws.send_response(request.type, request.action, "failed", res)
+                return
 
     except Exception as e:
         ws.send_response(request.type, request.action, "failed", str(e))

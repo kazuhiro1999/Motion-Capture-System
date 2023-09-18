@@ -2,7 +2,12 @@ import argparse
 import os
 import cv2
 import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from visalization import draw_keypoints3d
+
 from capture import MotionCapture
+from pose2d import MediapipePose
 
 
 def get_args():
@@ -19,15 +24,28 @@ def main():
     config_path = os.path.join(script_dir, args.config)
 
     capture = MotionCapture(config_path)
-    capture.start(mode='multi-process')
+    capture.start()
     
+    # visualize calibration result    
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
     while True:
-        data = capture.read()
-        print(data is not None)
-        if data:
-            cv2.imshow("manager", np.zeros([160,90]))
-        if cv2.waitKey(1) == 27:
-            break
+        timestamp, keypoints2d_list, keypoints3d = capture.read()
+        
+        ax.cla()
+        ax.set_xlim(-1.5,1.5)
+        ax.set_ylim(-1.5,1.5)
+        ax.set_zlim(0,3)
+        
+        draw_keypoints3d(ax, keypoints3d, MediapipePose.KINEMATIC_TREE)
+            
+        plt.draw()
+        plt.pause(0.01) 
+        if not plt.fignum_exists(1):
+            plt.clf()
+            plt.close()
+            break        
 
     capture.end()
 

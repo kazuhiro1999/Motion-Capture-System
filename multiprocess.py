@@ -37,10 +37,11 @@ def camera_process(camera_config, event, queue_out, cancel_event, model_complexi
         cv2.waitKey(1)
 
     camera.close()
+    cv2.destroyAllWindows()
     print(f"process {camera_config['name']} ended")
 
 
-def capture_process(config, queue_out, cancel_event):
+def capture_process(config, queue_out, cancel_event, model_complexity=1):
     # Initialize Motion Capture
     processes = []
     queues = []
@@ -49,7 +50,7 @@ def capture_process(config, queue_out, cancel_event):
     for camera_config in config['cameras']:
         queue = Queue()
         event = Event()
-        process = Process(target=camera_process, args=(camera_config, event, queue, cancel_event))
+        process = Process(target=camera_process, args=(camera_config, event, queue, cancel_event, model_complexity))
 
         processes.append(process)
         queues.append(queue)
@@ -91,17 +92,20 @@ def capture_process(config, queue_out, cancel_event):
         t_next = TimeUtil.get_unixtime()
 
         # 3D pose estimation 
-        keypoints3d = recover_pose_3d(proj_matrices, keypoints2d_list)
-        data = to_dict(timestamp, keypoints3d, MediapipePose.KEYPOINT_DICT, MediapipePose.Type)  
-        queue_out.put(data)            
+        keypoints3d = recover_pose_3d(proj_matrices, keypoints2d_list) 
+
+        # Remove old data 
+        while queue_out.qsize() > 1:
+            queue_out.get_nowait()
+
+        queue_out.put((timestamp, keypoints2d_list, keypoints3d))            
 
         timestamp = t_next
 
     # End subprocess
     for process in processes:
-        process.join()
+        process.join(timeout=1.0)
         process.terminate()
-
 
     cv2.destroyAllWindows()
     print("capture ended")

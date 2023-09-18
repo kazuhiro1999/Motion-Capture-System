@@ -28,11 +28,7 @@ from mpl_toolkits.mplot3d import Axes3D
 
 def draw_keypoints3d(ax, keypoints3d, skeleton=None):    
     if keypoints3d is None or skeleton is None:
-        return
-    ax.cla()
-    ax.set_xlim(-1.5,1.5)
-    ax.set_ylim(-1.5,1.5)
-    ax.set_zlim(0,3)
+        return ax
     for chain in skeleton:
         for j in range(len(chain)-1):
             x1,y1,z1 = keypoints3d[chain[j]]

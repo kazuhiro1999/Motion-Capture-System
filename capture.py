@@ -1,11 +1,12 @@
 import time
-import cv2
 import json
 from multiprocessing import Process, Event, Queue
 from queue import Empty
 
-from multiprocess import capture_process
+from camera import CameraSetting
 from space_calibration import SpaceCalibrator
+from multiprocess import capture_process
+from utils import TimeUtil
 
 
 class Status:
@@ -46,7 +47,7 @@ class MotionCapture:
                 self.config = json.load(f)
             self.config_path = config_path
             self.status = Status.INITIALIZED
-            return True, "Config loaded successfully"
+            return True, f"Config loaded successfully: {config_path}"
         except FileNotFoundError:
             return False, f"Config file not found: {e}"
         except json.JSONDecodeError:
@@ -67,7 +68,9 @@ class MotionCapture:
         if self.status != Status.CAPTURING and self.status != Status.CALIBRATING:
             return None, None, None
         try:
-            return self.queue.get(timeout=timeout)        
+            timestamp, keypoints2d_list, keypoints3d = self.queue.get(timeout=timeout)   
+            timestamp = timestamp + TimeUtil.Offset
+            return timestamp, keypoints2d_list, keypoints3d
         except Empty:
             return None, None, None
 
@@ -123,7 +126,7 @@ class MotionCapture:
             str: Status message.
         """
         if self.status == Status.CAPTURING:
-            return False, 'Capture has already started'
+            return False, 'Capture has already started.'
         
         if self.status == Status.UNINITIALIZED:
             return False, 'Capture is not initialized yet.'
@@ -147,13 +150,17 @@ class MotionCapture:
         if self.status != Status.CAPTURING:
             return False, "Cannot start calibration. Capture is not started."
                 
+        camera_settings = [CameraSetting(camera_config['setting_path']) for camera_config in self.config['cameras']]
+        self.calibrator.initialize(camera_settings)
         self.status = Status.CALIBRATING  # キャリブレーション開始時にステータスを更新
-
+        
         try:
+            print("sampling...")
             while not self.calibrator.is_sampled():
                 timestamp, keypoints2d_list, keypoints3d = self.read()
                 if timestamp:
                     self.calibrator.add_sample(timestamp, keypoints2d_list)
+                print(len(self.calibrator.samples))
                 time.sleep(0.01)
 
             # execute camera calibration
@@ -165,19 +172,19 @@ class MotionCapture:
 
             # reload config
             self.load_config(self.config_path)
-            self.status = Status.INITIALIZED  # キャリブレーション終了後にステータスを更新
+            self.status = Status.CAPTURING  # キャリブレーション終了後にステータスを更新
             print("calibration ended")
             
             return True, "Calibration successful"
 
         except Exception as e:
             return False, f"Error occurred during calibration: {e}"
-        finally:
-            self.end()
 
     def correct_calibration_with_hmd_trajectory(self, trajectory_data):
         try:
             self.calibrator.correct_calibration_with_hmd_trajectory(trajectory_data)
+            # reload config
+            self.load_config(self.config_path)
             return True, "Room calibration with HMD successful"
         except Exception as e:
             return False, f"Error occurred during room calibration: {e}"

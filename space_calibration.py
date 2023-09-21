@@ -1,4 +1,5 @@
 import json
+import pickle
 import cv2
 import numpy as np
 
@@ -21,7 +22,7 @@ class SpaceCalibrator:
         self.timestamps = []
         self.isActive = False
 
-    def start_calibration(self, camera_settings):
+    def initialize(self, camera_settings):
         """
         Initialize the calibration process.
         """
@@ -106,10 +107,10 @@ class SpaceCalibrator:
             
         # Apply the rotation to update camera setting
         for camera_setting in self.camera_settings:
-            R = Rs @ camera_setting.extrinsic_matrix[:,:3]
-            t = Rs @ camera_setting.extrinsic_matrix[:,:3] + Ts.reshape([3,1])
-            Rc = R.T
-            tc = -R.T @ t
+            Rc0= camera_setting.extrinsic_matrix[:,:3]
+            tc0 = camera_setting.extrinsic_matrix[:,3:]
+            Rc = Rc0 @ Rs.T
+            tc = tc0 - Rc0 @ Rs.T @ Ts.reshape([3,1])
             camera_setting.extrinsic_matrix = np.concatenate([Rc,tc], axis=-1)
             camera_setting.save()  # Save updated settings
 

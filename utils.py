@@ -6,13 +6,13 @@ class TimeUtil:
     # return unix milliseconds
     @staticmethod
     def get_unixtime():
-        current_time = time.time() + TimeUtil.Offset
+        current_time = time.time() 
         return int(current_time*1000)
     
-    # set unixtime
+    # set unix milliseconds
     @staticmethod
     def set_unixtime(ut):
-        offset = ut - time.time()
+        offset = ut - TimeUtil.get_unixtime()
         TimeUtil.Offset = offset
         return offset
 

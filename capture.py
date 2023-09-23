@@ -91,12 +91,15 @@ class MotionCapture:
             return False, 'Cannot start capture. Calibration is in progress.'
 
         self.is_playing = True
+        self.init_event = Event()
         self.cancel_event = Event()
-        self.proc = Process(target=capture_process, args=(self.config, self.queue, self.cancel_event))
+        self.proc = Process(target=capture_process, args=(self.config, self.init_event, self.queue, self.cancel_event))
         self.proc.start()  
-        self.status = Status.CAPTURING   
+        self.status = Status.CAPTURING  
+        print("Starting capture process...")    
 
-        print("capture process started")        
+        self.init_event.wait()
+        print("Capture started")
         return True, "Success to start capture"
 
     def end(self):
@@ -135,12 +138,15 @@ class MotionCapture:
             return False, 'Calibration is in progress.'
 
         self.is_playing = True
+        self.init_event = Event()
         self.cancel_event = Event()
-        self.proc = Process(target=capture_process, args=(self.config, self.queue, self.cancel_event, 2))
+        self.proc = Process(target=capture_process, args=(self.config, self.init_event, self.queue, self.cancel_event, 2))
         self.proc.start()  
-        self.status = Status.CAPTURING   
+        self.status = Status.CAPTURING    
+        print("Initializing calibration ...")    
 
-        print("calibration initialized")        
+        self.init_event.wait()
+        print("Capture started")      
         return True, "Start capturing for calibration."
     
     def start_calibration(self, reference_height=1.6):

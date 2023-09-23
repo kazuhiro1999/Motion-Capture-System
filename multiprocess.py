@@ -1,3 +1,4 @@
+import time
 import cv2
 import json
 from multiprocessing import Process, Queue, Event
@@ -15,15 +16,15 @@ def camera_process(camera_config, event, queue_out, cancel_event, model_complexi
     camera = USBCamera(camera_config)
     camera.open()
     pose_estimator = MediapipePose(model_complexity=model_complexity)
+
     print(f"process {camera_config['name']} initialized")
+    event.set()
 
     while not cancel_event.is_set():
         # Wait for the signal to start processing
-        if not event.is_set():
+        if event.is_set():
+            time.sleep(0.01)
             continue
-
-        # Reset the event for the next round
-        event.clear()
 
         frame = camera.get_image()
         if frame is not None:
@@ -33,15 +34,19 @@ def camera_process(camera_config, event, queue_out, cancel_event, model_complexi
 
         # Put the result into the queue
         queue_out.put((frame, keypoints2d))
-
         cv2.waitKey(1)
+
+        # ready for next processing
+        event.set()
 
     camera.close()
     cv2.destroyAllWindows()
+
     print(f"process {camera_config['name']} ended")
+    return
 
 
-def capture_process(config, queue_out, cancel_event, model_complexity=1):
+def capture_process(config, init_event, queue_out, cancel_event, model_complexity=1):
     # Initialize Motion Capture
     processes = []
     queues = []
@@ -61,11 +66,16 @@ def capture_process(config, queue_out, cancel_event, model_complexity=1):
         camera_setting = CameraSetting(camera_config['setting_path'])
         camera_settings.append(camera_setting)
 
-    print("capture start")
+    # Wait for the signal to start processing
+    while not all(event.is_set() for event in events):
+        time.sleep(0.01)  
 
-    # Send signal to start processing
+    # All process initialized
+    init_event.set()
+
+    # Reset the event for the next round
     for event in events:
-        event.set()
+        event.clear()
 
     timestamp = TimeUtil.get_unixtime()
 
@@ -85,9 +95,9 @@ def capture_process(config, queue_out, cancel_event, model_complexity=1):
                 proj_matrices.append(camera_settings[i].proj_matrix)
                 keypoints2d_list.append(keypoints2d)
 
-        # Send signal to start next processing
+        # Reset the event for the next processing
         for event in events:
-            event.set()
+            event.clear()
 
         t_next = TimeUtil.get_unixtime()
 
@@ -109,6 +119,7 @@ def capture_process(config, queue_out, cancel_event, model_complexity=1):
 
     cv2.destroyAllWindows()
     print("capture ended")
+    return
 
 
     

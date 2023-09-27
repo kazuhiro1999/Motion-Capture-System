@@ -133,20 +133,5 @@ def save_config(data):
     return config_path
 
 
-def quaternion_to_matrix(quaternion):
-    x, y, z, w = quaternion
-    matrix = np.zeros([3,3])
-    matrix[0,0] = 2*w**2 + 2*x**2 - 1
-    matrix[0,1] = 2*x*y - 2*z*w
-    matrix[0,2] = 2*x*z + 2*y*w
-    matrix[1,0] = 2*x*y + 2*z*w
-    matrix[1,1] = 2*w**2 + 2*y**2 - 1
-    matrix[1,2] = 2*y*z - 2*x*w
-    matrix[2,0] = 2*x*z - 2*y*w
-    matrix[2,1] = 2*y*z + 2*x*w
-    matrix[2,2] = 2*w**2 + 2*z**2 - 1
-    return matrix
-
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", debug=True, port=8888)

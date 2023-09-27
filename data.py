@@ -1,5 +1,7 @@
 
 
+import json
+import os
 import numpy as np
 from camera import CameraSetting
 
@@ -25,6 +27,44 @@ def to_dict(timestamp, keypoints3d, keys, type):
         }
         data['Bones'].append(bone)  
     return data
+
+
+def generate_config(data):
+    config = {'cameras': []}
+
+    for camera in data['cameras']:
+        # 設定ファイル名
+        setting_path = camera['setting_path']
+        camera_config = {
+            'name': camera['name'],
+            'setting_path': setting_path,
+        }
+        if camera['type'] == 'USBCamera':
+            camera_config['device'] = camera['device_id']
+        elif camera['type'] == 'Video':
+            camera_config['device'] = camera['video_path']
+        else:
+            camera_config['device'] = ""            
+        config['cameras'].append(camera_config)
+
+        # write extrinsic
+        position = camera['position']
+        t = np.array([position['x'], position['y'], position['z']]).reshape([3,1])
+
+        rotation = camera['rotation']
+        quaternion = [rotation['x'], rotation['y'], rotation['z'], rotation['w']]
+        R = quaternion_to_matrix(quaternion)
+
+        Rc = R.T
+        tc = -R.T @ t
+        extrinsic = np.concatenate([Rc, tc], axis=-1)
+
+        # save extrinsic
+        camera_setting = CameraSetting(setting_path)
+        camera_setting.extrinsic_matrix = extrinsic
+        camera_setting.save()
+
+    return config
 
 
 def get_calibration_result(config):

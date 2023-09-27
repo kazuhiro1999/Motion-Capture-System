@@ -4,7 +4,7 @@ import threading
 import time
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 from pose2d import MediapipePose
-from data import get_calibration_result, to_dict
+from data import generate_and_save_config, generate_config, get_calibration_result, to_dict
 from capture import MotionCapture, Status
 from utils import TimeUtil
 
@@ -44,10 +44,22 @@ class MotionCaptureWebSocket(WebSocket):
         if request.type == "test":
             self.send_response(request, "success", "received: test")
 
-        if request.type == "time":
+        elif request.type == "time":
             unixtime = int(request.data)
             offset = TimeUtil.set_unixtime(unixtime)
             self.send_response(request, "success", f"offset={int(offset)}msec")
+
+        elif request.type == "config":
+            data = json.loads(request.data)
+            config_path = data['config_path']
+            config = generate_config(data)  
+            with open(config_path, 'w') as f:
+                json.dump(config, f, inednt=4)
+            success, res = m_capture.load_config(config_path)
+            if success:
+                self.send_response(request, "success", res)
+            else:
+                self.send_response(request, "failed", res)
 
         elif request.type == "calibration":
             thread = threading.Thread(target=handle_calibration, args=(self, request))

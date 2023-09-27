@@ -3,10 +3,10 @@ import json
 from multiprocessing import Process, Event, Queue
 from queue import Empty
 
-from camera import CameraSetting
-from space_calibration import SpaceCalibrator
-from multiprocess import capture_process
-from utils import TimeUtil
+from .camera import CameraSetting
+from .calibration.space_calibration import SpaceCalibrator
+from .multiprocess import capture_process
+from .utils import TimeUtil
 
 
 class Status:

@@ -1,12 +1,11 @@
 import json
-import os
 import threading
 import time
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
-from pose2d import MediapipePose
-from data import generate_and_save_config, generate_config, get_calibration_result, to_dict
-from capture import MotionCapture, Status
-from utils import TimeUtil
+from motioncapture.pose2d import MediapipePose
+from motioncapture.data import generate_config, get_calibration_result, to_dict
+from motioncapture.capture import MotionCapture
+from motioncapture.utils import TimeUtil
 
 
 m_capture = MotionCapture()

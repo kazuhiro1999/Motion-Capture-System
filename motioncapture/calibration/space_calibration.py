@@ -1,12 +1,11 @@
 import json
-import pickle
 import cv2
 import numpy as np
 
-from calibration.extrinsic import calibrate_cameras
-from calibration.room import *
-from calibration.trajectory import best_fit_transform_kabsch, extract_hmd_trajectory
-from pose2d import MediapipePose
+from .extrinsic import calibrate_cameras
+from .room import *
+from .trajectory import best_fit_transform_kabsch, extract_hmd_trajectory
+from ..pose2d import MediapipePose
 
 KEYPOINT_DICT = MediapipePose.KEYPOINT_DICT
 

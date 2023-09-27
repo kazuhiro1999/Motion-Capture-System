@@ -1,15 +1,13 @@
 import time
 import cv2
-import json
 from multiprocessing import Process, Queue, Event
 from queue import Empty
 
-from utils import TimeUtil
-from camera import CameraSetting, USBCamera
-from pose2d import MediapipePose
-from pose3d import recover_pose_3d
-from data import to_dict
-from visalization import draw_keypoints
+from .camera import CameraSetting, USBCamera
+from .pose2d import MediapipePose
+from .pose3d import recover_pose_3d
+from .visalization import draw_keypoints
+from .utils import TimeUtil
 
 
 def camera_process(camera_config, event, queue_out, cancel_event, model_complexity=1):

@@ -1,9 +1,5 @@
-
-
-import json
-import os
 import numpy as np
-from camera import CameraSetting
+from .camera import CameraSetting
 
 
 def to_dict(timestamp, keypoints3d, keys, type):

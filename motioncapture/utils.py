@@ -16,9 +16,6 @@ class TimeUtil:
         TimeUtil.Offset = offset
         return offset
 
-
-import time
-
 class FPSCalculator:
     DICT = {}
 

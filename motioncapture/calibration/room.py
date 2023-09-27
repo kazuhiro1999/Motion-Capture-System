@@ -1,5 +1,5 @@
 import numpy as np
-from pose2d import MediapipePose
+from ..pose2d import MediapipePose
 
 KEYPOINT_DICT = MediapipePose.KEYPOINT_DICT
 

@@ -3,13 +3,13 @@
 '''
 import numpy as np
 import json
+import PySimpleGUI as sg
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from camera import CameraSetting
-from pose2d import MediapipePose
-import PySimpleGUI as sg
 
-from visalization import draw_camera
+from ..camera import CameraSetting
+from ..pose2d import MediapipePose
+from ..visalization import draw_camera
 
 
 def riemannian_distance(R, Rg):

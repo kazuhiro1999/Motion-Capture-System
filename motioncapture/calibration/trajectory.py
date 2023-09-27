@@ -1,6 +1,6 @@
 import numpy as np
-from calibration.room import *
-from pose2d import MediapipePose
+from .room import *
+from ..pose2d import MediapipePose
 
 KEYPOINT_DICT = MediapipePose.KEYPOINT_DICT
 

@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from scipy.optimize import least_squares   
-from pose2d import MediapipePose
+from ..pose2d import MediapipePose
 
 KEYPOINT_DICT = MediapipePose.KEYPOINT_DICT 
 

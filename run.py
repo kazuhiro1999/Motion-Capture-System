@@ -1,13 +1,11 @@
 import argparse
 import os
-import cv2
-import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from visalization import draw_keypoints3d
 
-from capture import MotionCapture
-from pose2d import MediapipePose
+from motioncapture.capture import MotionCapture
+from motioncapture.pose2d import MediapipePose
+from motioncapture.visalization import draw_keypoints3d
 
 
 def get_args():

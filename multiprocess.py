@@ -18,13 +18,14 @@ def camera_process(camera_config, event, queue_out, cancel_event, model_complexi
     pose_estimator = MediapipePose(model_complexity=model_complexity)
 
     print(f"process {camera_config['name']} initialized")
-    event.set()
+    event.clear()
 
     while not cancel_event.is_set():
         # Wait for the signal to start processing
-        if event.is_set():
-            time.sleep(0.01)
+        if not event.is_set():
             continue
+
+        event.clear()
 
         frame = camera.get_image()
         if frame is not None:
@@ -34,10 +35,8 @@ def camera_process(camera_config, event, queue_out, cancel_event, model_complexi
 
         # Put the result into the queue
         queue_out.put((frame, keypoints2d))
-        cv2.waitKey(1)
 
-        # ready for next processing
-        event.set()
+        cv2.waitKey(1)
 
     camera.close()
     cv2.destroyAllWindows()
@@ -55,6 +54,7 @@ def capture_process(config, init_event, queue_out, cancel_event, model_complexit
     for camera_config in config['cameras']:
         queue = Queue()
         event = Event()
+        event.set()
         process = Process(target=camera_process, args=(camera_config, event, queue, cancel_event, model_complexity))
 
         processes.append(process)
@@ -67,15 +67,15 @@ def capture_process(config, init_event, queue_out, cancel_event, model_complexit
         camera_settings.append(camera_setting)
 
     # Wait for the signal to start processing
-    while not all(event.is_set() for event in events):
-        time.sleep(0.01)  
+    while any(event.is_set() for event in events):
+        time.sleep(0.1)  
 
     # All process initialized
     init_event.set()
 
-    # Reset the event for the next round
+    # Reset the event for the next processing
     for event in events:
-        event.clear()
+        event.set()
 
     timestamp = TimeUtil.get_unixtime()
 
@@ -97,7 +97,7 @@ def capture_process(config, init_event, queue_out, cancel_event, model_complexit
 
         # Reset the event for the next processing
         for event in events:
-            event.clear()
+            event.set()
 
         t_next = TimeUtil.get_unixtime()
 
@@ -108,7 +108,7 @@ def capture_process(config, init_event, queue_out, cancel_event, model_complexit
         while queue_out.qsize() > 1:
             queue_out.get_nowait()
 
-        queue_out.put((timestamp, keypoints2d_list, keypoints3d))            
+        queue_out.put((timestamp, keypoints2d_list, keypoints3d))   
 
         timestamp = t_next
 

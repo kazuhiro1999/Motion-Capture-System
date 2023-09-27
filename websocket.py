@@ -4,7 +4,7 @@ import threading
 import time
 from SimpleWebSocketServer import SimpleWebSocketServer, WebSocket
 from pose2d import MediapipePose
-from data import to_dict
+from data import get_calibration_result, to_dict
 from capture import MotionCapture, Status
 from utils import TimeUtil
 
@@ -16,6 +16,7 @@ class Request:
     def __init__(self, string):
         try:
             request = json.loads(string)
+            self.id = request['id']
             self.type = request['type']
             self.action = request['action']
             self.data = request.get('data', {})
@@ -41,12 +42,12 @@ class MotionCaptureWebSocket(WebSocket):
         print(f"received: {request.type}-{request.action}")
 
         if request.type == "test":
-            self.send_response(request.type, request.action, "success")
+            self.send_response(request, "success", "received: test")
 
         if request.type == "time":
-            unixtime = request.data
+            unixtime = int(request.data)
             offset = TimeUtil.set_unixtime(unixtime)
-            self.send_response(request.type, request.action, "success", f"offset={int(offset)}msec")
+            self.send_response(request, "success", f"offset={int(offset)}msec")
 
         elif request.type == "calibration":
             thread = threading.Thread(target=handle_calibration, args=(self, request))
@@ -58,11 +59,12 @@ class MotionCaptureWebSocket(WebSocket):
             thread.start()
             self.active_threads[request.type] = thread
 
-    def send_response(self, type, action, status, message=None, data=None):
+    def send_response(self, request:Request, status, message=None, data=None):
         """Sends a response back to the client."""
         response = {
-            "type": type,
-            "action": action,
+            "id" : request.id,
+            "type": request.type,
+            "action": request.action,
             "status": status
         }
         if message:
@@ -87,30 +89,30 @@ def handle_capture(ws: MotionCaptureWebSocket, request: Request):
             config_path = request.data if request.data else "config.json"
             success, res = m_capture.load_config(config_path)
             if success:
-                ws.send_response(request.type, request.action, 'success', res)
+                ws.send_response(request, 'success', res)
             else:
-                ws.send_response(request.type, request.action, 'failed', res)     
+                ws.send_response(request, 'failed', res)     
 
         elif request.action == 'start':
             success, res = m_capture.start()
             if success:
-                ws.send_response(request.type, request.action, 'success', res)
+                ws.send_response(request, 'success', res)
 
                 # Start a new thread to send data
                 sender_thread = threading.Thread(target=data_sender, args=(ws,))
                 sender_thread.start()
             else:
-                ws.send_response(request.type, request.action, 'failed', res)            
+                ws.send_response(request, 'failed', res)            
 
         elif request.action == 'end':
             success, res = m_capture.end()
             if success:
-                ws.send_response(request.type, request.action, 'success', res)
+                ws.send_response(request, 'success', res)
             else:
-                ws.send_response(request.type, request.action, 'failed', res)
+                ws.send_response(request, 'failed', res)
 
     except Exception as e:
-        ws.send_response(request.type, request.action, "failed", str(e))
+        ws.send_response(request, "failed", str(e))
 
     finally:
         # Cleanup: Remove the completed thread from active_threads
@@ -125,40 +127,35 @@ def handle_calibration(ws: MotionCaptureWebSocket, request: Request):
             # Initialize calibration
             success, res = m_capture.init_calibration()
             if success:
-                ws.send_response(request.type, request.action, "initialized", res)
+                ws.send_response(request, "initialized", res)
             else:
-                ws.send_response(request.type, request.action, "failed", res)
+                ws.send_response(request, "failed", res)
                 return
 
         elif request.action == 'start':
-            reference_height = request.data if request.data else 1.6  # Default to 1.6 if height is not provided
+            reference_height = float(request.data) if request.data else 1.6  # Default to 1.6 if height is not provided
 
-            time.sleep(3)
             # Start calibration
             success, res = m_capture.start_calibration(reference_height=reference_height)
 
             if success:
-                ws.send_response(request.type, request.action, "finished", res, data=m_capture.config)
+                calibration_result = get_calibration_result(m_capture.config)
+                ws.send_response(request, "finished", res+f" with height:{reference_height}", data=calibration_result)
             else:
-                ws.send_response(request.type, request.action, "failed", res)
-
-            success, res = m_capture.end()
-            if success:
-                ws.send_response(request.type, "end", 'success', res)
-            else:
-                ws.send_response(request.type, "end", 'failed', res)      
+                ws.send_response(request, "failed", res)   
             
         elif request.action == "trajectry":
-            trajectory_data = request.data
+            trajectory_data = json.loads(request.data)
             success, res = m_capture.correct_calibration_with_hmd_trajectory(trajectory_data)
             if success:
-                ws.send_response(request.type, request.action, "success", res, data=m_capture.config)
+                calibration_result = get_calibration_result(m_capture.config)
+                ws.send_response(request, "success", res, data=calibration_result)
             else:
-                ws.send_response(request.type, request.action, "failed", res)
+                ws.send_response(request, "failed", res)
                 return
 
     except Exception as e:
-        ws.send_response(request.type, request.action, "failed", str(e))
+        ws.send_response(request, "failed", str(e))
 
     finally:
         # Cleanup: Remove the completed thread from active_threads

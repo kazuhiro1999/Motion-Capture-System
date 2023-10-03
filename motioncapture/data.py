@@ -1,4 +1,5 @@
 import numpy as np
+import struct
 from .camera import CameraSetting
 
 
@@ -23,6 +24,29 @@ def to_dict(timestamp, keypoints3d, keys, type):
         }
         data['Bones'].append(bone)  
     return data
+
+
+# シリアライズ
+def encode(timestamp, keypoints3d):
+    # timestampをバイトデータとしてパック
+    data = struct.pack('Q', timestamp)  # unsigned long long型（int64）
+
+    # positionsをバイトデータとしてパック
+    for x,y,z in keypoints3d:  
+        data += struct.pack('fff', x, y, z)  # float型（float32）
+    
+    return data
+
+# デシリアライズ
+def decode(data):
+    # 最初の8バイトをint64型のtimestampとしてアンパック
+    timestamp = struct.unpack('Q', data[:8])[0]
+    
+    # 残りのバイトをfloat32型の位置データとしてアンパック
+    values = np.array(struct.unpack('99f', data[8:]))
+    keypoints3d = values.reshape((33, 3))
+    
+    return timestamp, keypoints3d
 
 
 def generate_config(data):
